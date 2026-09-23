@@ -32,7 +32,8 @@ const navigation = [
 
 export function Sidebar() {
     const pathname = usePathname();
-    const { user, logout } = useAuthStore();
+    const user = useAuthStore((state) => state.user);
+    const signOut = useAuthStore((state) => state.signOut);
 
     return (
         <aside className="flex h-full w-[220px] flex-col bg-sidebar border-r border-sidebar-border">
@@ -81,7 +82,7 @@ export function Sidebar() {
                         <p className="truncate text-[11px] text-muted-foreground mt-0.5">{user?.email || ""}</p>
                     </div>
                     <button
-                        onClick={logout}
+                        onClick={signOut}
                         className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
                         title="Sign out"
                     >

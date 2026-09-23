@@ -11,31 +11,99 @@ import type {
 } from "./types";
 
 // --- Auth Store ---
-interface AuthState {
-    isAuthenticated: boolean;
-    user: { email: string; name: string } | null;
-    login: (email: string) => boolean;
-    logout: () => void;
+//
+// A cache of the server's answer, never the authority for it.
+//
+// This used to BE the authority: `login(email)` set a flag, ignored the
+// password entirely, and persisted to localStorage. It gated navigation and
+// protected nothing, because no API route checked anything. Authentication now
+// lives on the server and travels as an httpOnly session cookie, which this
+// code cannot read — which is the point. What is kept here is only who the
+// server said you are, so the sidebar can show a name without re-asking.
+//
+// Nothing is persisted. On reload the app asks /api/auth/me again, because a
+// session can be revoked or expire while the tab is closed and only the server
+// knows.
+interface AuthUser {
+    id: string;
+    email: string;
+    name: string;
+    role: string;
+    tenantId: string;
+    tenantName: string;
 }
 
-export const useAuthStore = create<AuthState>()(
-    persist(
-        (set) => ({
-            isAuthenticated: false,
-            user: null,
-            // Local-only session marker. There is no backend auth yet, so this
-            // gates navigation and nothing more — it protects no data.
-            login: (email: string) => {
-                set({ isAuthenticated: true, user: { email, name: email.split("@")[0] } });
-                return true;
-            },
-            logout: () => {
-                set({ isAuthenticated: false, user: null });
-            },
-        }),
-        { name: "dialo-auth" }
-    )
-);
+interface AuthState {
+    status: "checking" | "signedIn" | "signedOut";
+    user: AuthUser | null;
+    /** Set when a session ended by itself rather than by the user signing out. */
+    expired: boolean;
+    /** Asks the server who this is. Called on load and after signing in. */
+    refresh: () => Promise<void>;
+    signIn: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+    signOut: () => Promise<void>;
+    /** Called when any request is rejected, so one 401 signs out every screen. */
+    handleUnauthorized: () => void;
+}
+
+export const useAuthStore = create<AuthState>()((set, get) => ({
+    status: "checking",
+    user: null,
+    expired: false,
+
+    refresh: async () => {
+        try {
+            const response = await fetch("/api/auth/me", { cache: "no-store" });
+            if (!response.ok) {
+                set({ status: "signedOut", user: null });
+                return;
+            }
+            const body = await response.json();
+            set({ status: "signedIn", user: body.user ?? null, expired: false });
+        } catch {
+            // Unreachable server is not the same as signed out, but there is
+            // nothing to show either way until it answers.
+            set({ status: "signedOut", user: null });
+        }
+    },
+
+    signIn: async (email, password) => {
+        try {
+            const response = await fetch("/api/auth/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, password }),
+            });
+            const body = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                return { ok: false, error: body?.error?.message ?? "Could not sign in." };
+            }
+
+            // The session is the cookie the server just set; the token in the
+            // body is for mobile clients and is deliberately not stored here.
+            set({ status: "signedIn", user: body.user ?? null, expired: false });
+            return { ok: true };
+        } catch {
+            return { ok: false, error: "Could not reach the server." };
+        }
+    },
+
+    signOut: async () => {
+        try {
+            await fetch("/api/auth/logout", { method: "POST" });
+        } catch {
+            // The local state is cleared regardless: someone who asked to sign
+            // out must end up signed out even if the network refused.
+        }
+        set({ status: "signedOut", user: null, expired: false });
+    },
+
+    handleUnauthorized: () => {
+        if (get().status === "signedOut") return;
+        set({ status: "signedOut", user: null, expired: true });
+    },
+}));
 
 // Leads, call records and follow-ups deliberately have no client store.
 //

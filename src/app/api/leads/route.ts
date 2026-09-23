@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { deleteLead, getLeads, saveLead, suppressLead, updateLead } from "@/lib/db";
+import { requireAuth, scopeToTenant } from "@/lib/auth/guard";
+import { deleteLead, getLeads, getLegacyTenantId, saveLead, suppressLead, updateLead } from "@/lib/db";
 import type { Lead } from "@/lib/types";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
   try {
-    return NextResponse.json({ leads: getLeads() });
+    return NextResponse.json({
+      leads: scopeToTenant(getLeads(), auth.tenantId, getLegacyTenantId()),
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("[GET /api/leads]", message);
@@ -14,6 +20,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
   try {
     const body = await request.json();
 
@@ -23,6 +32,7 @@ export async function POST(request: NextRequest) {
 
     const lead: Lead = {
       id: body.id || `lead_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      tenantId: auth.tenantId,
       name: (body.name || "").trim() || "Customer",
       phone: String(body.phone).trim(),
       email: body.email,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { useAuthStore } from "@/lib/store";
@@ -11,53 +11,39 @@ import { TopBar } from "./top-bar";
 const PUBLIC_PATHS = ["/login", "/privacy", "/terms"];
 
 /**
- * Waits for the persisted auth store to rehydrate from localStorage.
+ * Gates the application on a session the server confirms.
  *
- * Rendering before hydration finishes would briefly show the signed-out state to
- * someone who is signed in, and bounce them to /login.
+ * The check is a request, not a localStorage flag. That is the whole change
+ * from the previous version: a flag in the browser could be set by anyone and
+ * proved nothing, whereas this asks the server, and the server is also what
+ * every API route now checks. A session can be revoked or expire while the tab
+ * is closed, so the answer is re-fetched on load rather than remembered.
  */
-function useAuthHydrated(): boolean {
-  // The persist API is not attached while prerendering on the server, so every
-  // access goes through this guard rather than assuming a browser.
-  const persist = useAuthStore.persist as typeof useAuthStore.persist | undefined;
-
-  const [hydrated, setHydrated] = useState(() => persist?.hasHydrated() ?? false);
-
-  useEffect(() => {
-    if (!persist) return;
-    const unsubscribe = persist.onFinishHydration(() => setHydrated(true));
-    // If rehydration finished between the initial render and this effect, the
-    // subscription above would never fire, so catch up on the next tick.
-    const catchUp = setTimeout(() => {
-      if (persist.hasHydrated()) setHydrated(true);
-    }, 0);
-
-    return () => {
-      clearTimeout(catchUp);
-      unsubscribe();
-    };
-  }, [persist]);
-
-  return hydrated;
-}
-
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  const hydrated = useAuthHydrated();
+  const status = useAuthStore((state) => state.status);
+  const refresh = useAuthStore((state) => state.refresh);
   const router = useRouter();
   const pathname = usePathname();
 
   const isPublic = PUBLIC_PATHS.includes(pathname);
 
+  // Asks once on mount. `refresh` is a stable store action, so this does not
+  // re-run on every render.
   useEffect(() => {
-    if (!hydrated) return;
-    if (!isAuthenticated && !isPublic) router.replace("/login");
-    if (isAuthenticated && pathname === "/login") router.replace("/dashboard");
-  }, [hydrated, isAuthenticated, isPublic, pathname, router]);
+    refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (status === "checking") return;
+    if (status === "signedOut" && !isPublic) router.replace("/login");
+    if (status === "signedIn" && pathname === "/login") router.replace("/dashboard");
+  }, [status, isPublic, pathname, router]);
 
   if (isPublic) return <>{children}</>;
 
-  if (!hydrated || !isAuthenticated) {
+  // Still asking, or signed out and on the way to /login. Showing the app
+  // shell here would flash a dashboard the person is not entitled to see.
+  if (status !== "signedIn") {
     return (
       <div className="flex h-screen items-center justify-center">
         <span className="sr-only">Loading</span>

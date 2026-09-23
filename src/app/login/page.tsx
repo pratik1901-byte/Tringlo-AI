@@ -1,140 +1,279 @@
 "use client";
 
-import { useState } from "react";
-import { useAuthStore } from "@/lib/store";
+// ============================================================
+// Dialo AI — Sign In
+// ============================================================
+//
+// Two modes, decided by the server rather than by the form:
+//
+//   - Normal sign-in, against /api/auth/login.
+//   - First-run setup, when no account exists yet. There are no demo
+//     credentials anywhere in Dialo, so this is how the first account comes to
+//     exist. The server only allows it from the machine it runs on.
+//
+// The password is never stored, never logged, and never kept in this component
+// after submission. The session is an httpOnly cookie the server sets, which
+// this code deliberately cannot read.
+// ============================================================
+
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Phone, Mail, Lock, ArrowRight, Loader2 } from "lucide-react";
+import { Loader2, Lock, Mail, Building2, User as UserIcon } from "lucide-react";
+
+import { useAuthStore } from "@/lib/store";
+
+interface SetupStatus {
+  needsSetup: boolean;
+  canSetupHere: boolean;
+}
 
 export default function LoginPage() {
-    const [email, setEmail] = useState("");
-    const [password, setPassword] = useState("");
-    const [isLoading, setIsLoading] = useState(false);
-    const { login } = useAuthStore();
-    const router = useRouter();
+  const router = useRouter();
+  const signIn = useAuthStore((state) => state.signIn);
+  const refresh = useAuthStore((state) => state.refresh);
+  const expired = useAuthStore((state) => state.expired);
 
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        setIsLoading(true);
+  const [setup, setSetup] = useState<SetupStatus | null>(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [businessName, setBusinessName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-        const success = login(email);
-        if (success) {
-            router.push("/dashboard");
-        }
-        setIsLoading(false);
-    };
+  const loadSetupStatus = useCallback(async () => {
+    try {
+      const response = await fetch("/api/auth/setup-status", { cache: "no-store" });
+      setSetup(response.ok ? await response.json() : { needsSetup: false, canSetupHere: false });
+    } catch {
+      // If this cannot be reached, show the ordinary sign-in form: it is the
+      // right thing for an existing installation, which is the common case.
+      setSetup({ needsSetup: false, canSetupHere: false });
+    }
+  }, []);
 
-    return (
-        <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 dark:bg-zinc-950 p-4">
-            <div className="w-full max-w-md space-y-8 rounded-2xl bg-white p-8 shadow-xl dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
-                <div className="flex flex-col items-center text-center">
-                    <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg">
-                        <Phone className="h-6 w-6" />
-                    </div>
-                    <h2 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-                        Welcome to Dialo AI
-                    </h2>
-                    <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-                        Sign in to your account to continue
-                    </p>
-                </div>
+  // Scheduled rather than called inline, matching lib/use-dialo-data: the
+  // effect subscribes to the server, and resolving it synchronously inside the
+  // effect body would cascade an extra render before the first paint.
+  useEffect(() => {
+    const timer = setTimeout(loadSetupStatus, 0);
+    return () => clearTimeout(timer);
+  }, [loadSetupStatus]);
 
-                <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-                    <div className="space-y-4">
-                        <div>
-                            <label
-                                htmlFor="email"
-                                className="block text-sm font-medium text-zinc-700 dark:text-zinc-300"
-                            >
-                                Email address
-                            </label>
-                            <div className="relative mt-1">
-                                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                                    <Mail className="h-5 w-5 text-zinc-400" />
-                                </div>
-                                <input
-                                    id="email"
-                                    name="email"
-                                    type="email"
-                                    autoComplete="email"
-                                    required
-                                    value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
-                                    className="block w-full rounded-lg border border-zinc-300 bg-white py-2.5 pl-10 pr-3 text-zinc-900 placeholder-zinc-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:placeholder-zinc-500 sm:text-sm"
-                                    placeholder="you@example.com"
-                                />
-                            </div>
-                        </div>
+  const handleSignIn = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (busy) return;
 
-                        <div>
-                            <label
-                                htmlFor="password"
-                                className="block text-sm font-medium text-zinc-700 dark:text-zinc-300"
-                            >
-                                Password
-                            </label>
-                            <div className="relative mt-1">
-                                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                                    <Lock className="h-5 w-5 text-zinc-400" />
-                                </div>
-                                <input
-                                    id="password"
-                                    name="password"
-                                    type="password"
-                                    autoComplete="current-password"
-                                    required
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    className="block w-full rounded-lg border border-zinc-300 bg-white py-2.5 pl-10 pr-3 text-zinc-900 placeholder-zinc-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:placeholder-zinc-500 sm:text-sm"
-                                    placeholder="••••••••"
-                                />
-                            </div>
-                        </div>
-                    </div>
+    setBusy(true);
+    setError(null);
+    const result = await signIn(email, password);
+    setBusy(false);
 
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center">
-                            <input
-                                id="remember-me"
-                                name="remember-me"
-                                type="checkbox"
-                                className="h-4 w-4 rounded border-zinc-300 text-primary focus:ring-primary dark:border-zinc-600 dark:bg-zinc-700"
-                            />
-                            <label
-                                htmlFor="remember-me"
-                                className="ml-2 block text-sm text-zinc-700 dark:text-zinc-300"
-                            >
-                                Remember me
-                            </label>
-                        </div>
+    if (result.ok) {
+      setPassword("");
+      router.replace("/dashboard");
+    } else {
+      setError(result.error ?? "Could not sign in.");
+    }
+  };
 
-                        <div className="text-sm">
-                            <a
-                                href="#"
-                                className="font-medium text-primary hover:text-primary/80"
-                            >
-                                Forgot your password?
-                            </a>
-                        </div>
-                    </div>
+  const handleCreateAccount = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (busy) return;
 
-                    <div>
-                        <button
-                            type="submit"
-                            disabled={isLoading}
-                            className="group relative flex w-full justify-center rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-70 disabled:cursor-not-allowed transition-all"
-                        >
-                            {isLoading ? (
-                                <Loader2 className="h-5 w-5 animate-spin" />
-                            ) : (
-                                <>
-                                    Sign in
-                                    <ArrowRight className="ml-2 h-5 w-5 opacity-70 transition-transform group-hover:translate-x-1" />
-                                </>
-                            )}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    );
+    setBusy(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/auth/bootstrap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, name, businessName }),
+      });
+      const body = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setError(body?.error?.message ?? "Could not create the account.");
+        setBusy(false);
+        return;
+      }
+
+      // Created, now sign in with it so the person is not asked twice.
+      const result = await signIn(email, password);
+      setPassword("");
+      setBusy(false);
+
+      if (result.ok) {
+        await refresh();
+        router.replace("/dashboard");
+      } else {
+        setError("Account created. Sign in to continue.");
+        await loadSetupStatus();
+      }
+    } catch {
+      setError("Could not reach the server.");
+      setBusy(false);
+    }
+  };
+
+  const isSetup = setup?.needsSetup === true && setup.canSetupHere;
+  const blockedSetup = setup?.needsSetup === true && !setup.canSetupHere;
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background p-6">
+      <div className="w-full max-w-sm">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Dialo</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {isSetup ? "Create the first account for this workspace." : "Sign in to continue."}
+        </p>
+
+        {expired && !error && (
+          <p className="mt-5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+            Your session ended. Sign in again to continue.
+          </p>
+        )}
+
+        {error && (
+          <p
+            role="alert"
+            className="mt-5 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2.5 text-sm text-foreground"
+          >
+            {error}
+          </p>
+        )}
+
+        {blockedSetup && (
+          <p className="mt-5 rounded-md border border-border bg-muted px-3 py-2.5 text-sm text-muted-foreground">
+            No account exists yet. For safety the first account can only be created from a browser
+            on the machine running Dialo, or with the internal secret.
+          </p>
+        )}
+
+        {setup === null ? (
+          <div className="mt-8 flex justify-center">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <form className="mt-7 space-y-4" onSubmit={isSetup ? handleCreateAccount : handleSignIn}>
+            {isSetup && (
+              <>
+                <Field
+                  id="businessName"
+                  label="Business name"
+                  icon={<Building2 className="h-4 w-4 text-muted-foreground" />}
+                  value={businessName}
+                  onChange={setBusinessName}
+                  placeholder="Your company"
+                  required
+                  disabled={busy}
+                />
+                <Field
+                  id="name"
+                  label="Your name"
+                  icon={<UserIcon className="h-4 w-4 text-muted-foreground" />}
+                  value={name}
+                  onChange={setName}
+                  placeholder="Optional"
+                  disabled={busy}
+                />
+              </>
+            )}
+
+            <Field
+              id="email"
+              label="Email"
+              type="email"
+              autoComplete="username"
+              icon={<Mail className="h-4 w-4 text-muted-foreground" />}
+              value={email}
+              onChange={setEmail}
+              placeholder="you@company.com"
+              required
+              disabled={busy || blockedSetup}
+            />
+
+            <Field
+              id="password"
+              label="Password"
+              type="password"
+              autoComplete={isSetup ? "new-password" : "current-password"}
+              icon={<Lock className="h-4 w-4 text-muted-foreground" />}
+              value={password}
+              onChange={setPassword}
+              placeholder={isSetup ? "At least 10 characters" : "••••••••"}
+              required
+              disabled={busy || blockedSetup}
+              hint={isSetup ? "At least 10 characters. Stored only as a scrypt hash." : undefined}
+            />
+
+            <button
+              type="submit"
+              disabled={busy || blockedSetup}
+              className="flex h-10 w-full items-center justify-center rounded-md bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {busy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : isSetup ? (
+                "Create account"
+              ) : (
+                "Sign in"
+              )}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Field({
+  id,
+  label,
+  icon,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+  required = false,
+  disabled = false,
+  autoComplete,
+  hint,
+}: {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  type?: string;
+  required?: boolean;
+  disabled?: boolean;
+  autoComplete?: string;
+  hint?: string;
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className="block text-sm font-medium text-foreground">
+        {label}
+      </label>
+      <div className="relative mt-1.5">
+        <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+          {icon}
+        </span>
+        <input
+          id={id}
+          name={id}
+          type={type}
+          autoComplete={autoComplete}
+          required={required}
+          disabled={disabled}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          className="block h-10 w-full rounded-md border border-input bg-card pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:opacity-60"
+        />
+      </div>
+      {hint && <p className="mt-1.5 text-xs text-muted-foreground">{hint}</p>}
+    </div>
+  );
 }

@@ -1,0 +1,34 @@
+// ============================================================
+// GET /api/auth/setup-status
+// ============================================================
+//
+// Tells the login screen whether to show "sign in" or "create the first
+// account".
+//
+// Unauthenticated by necessity — it is read before anyone can sign in. It
+// discloses only whether any account exists and whether this particular
+// caller could create one, which is the minimum the screen needs and reveals
+// nothing about who the users are.
+// ============================================================
+
+import { NextResponse } from "next/server";
+
+import { isLocalRequest } from "@/lib/auth/local-request";
+import { countUsers } from "@/lib/db";
+
+export async function GET(request: Request) {
+  const needsSetup = countUsers() === 0;
+
+  return NextResponse.json(
+    {
+      needsSetup,
+      // Whether *this* caller may run setup, so a browser on the public URL is
+      // told to use the server machine rather than shown a form that will fail.
+      canSetupHere:
+        needsSetup &&
+        (isLocalRequest(request) || Boolean(process.env.DIALO_INTERNAL_SECRET)),
+      localRequest: isLocalRequest(request),
+    },
+    { headers: { "Cache-Control": "no-store" } }
+  );
+}

@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getFollowUp, getFollowUps, getLead, isLeadSuppressed, saveFollowUp, updateFollowUp } from "@/lib/db";
+import { requireAuth, scopeToTenant } from "@/lib/auth/guard";
+import { getFollowUp, getFollowUps, getLead, getLegacyTenantId, isLeadSuppressed, saveFollowUp, updateFollowUp } from "@/lib/db";
 import type { FollowUp } from "@/lib/types";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
   try {
-    return NextResponse.json({ followUps: getFollowUps() });
+    return NextResponse.json({
+      followUps: scopeToTenant(getFollowUps(), auth.tenantId, getLegacyTenantId()),
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("[GET /api/follow-ups]", message);

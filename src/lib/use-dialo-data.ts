@@ -14,6 +14,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useAuthStore } from "@/lib/store";
+
 import type { CallRecord, FollowUp, Lead } from "@/lib/types";
 import type { SarvamConfigStatus } from "@/lib/providers/sarvam/types";
 import type {
@@ -23,6 +25,15 @@ import type {
   OutcomeSlice,
   WeeklyPoint,
 } from "@/lib/metrics";
+
+/**
+ * How many call records the web client pulls.
+ *
+ * Its tables and charts render the whole history, so it asks for a page large
+ * enough to cover it rather than paging. The backend caps this at 200; the
+ * Flutter client pages properly, and this client is being replaced by it.
+ */
+const RECORDS_PAGE_SIZE = 200;
 
 export interface Resource<T> {
   data: T | null;
@@ -46,7 +57,24 @@ function useResource<T>(url: string, intervalMs: number | null): Resource<T> {
       const response = await fetch(url, { cache: "no-store" });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        throw new Error(body.error || `Request failed with status ${response.status}`);
+
+        // A rejected session is not a data error. Reporting it as one is how
+        // every screen came to say "something went wrong" at once, when what
+        // had actually happened was that nobody was signed in. Telling the
+        // auth store instead sends the person to the login screen.
+        if (response.status === 401) {
+          useAuthStore.getState().handleUnauthorized();
+          throw new Error("Your session has ended. Sign in again.");
+        }
+
+        // The API returns either { error: "..." } or { error: { message } }.
+        const message =
+          typeof body.error === "string"
+            ? body.error
+            : typeof body.error?.message === "string"
+              ? body.error.message
+              : `Request failed with status ${response.status}`;
+        throw new Error(message);
       }
       setData((await response.json()) as T);
       setError(null);
@@ -100,7 +128,10 @@ function useResource<T>(url: string, intervalMs: number | null): Resource<T> {
 // ------------------------------------------------------------
 
 export function useCallRecords(intervalMs: number | null = 6000) {
-  const resource = useResource<{ records: CallRecord[] }>("/api/records", intervalMs);
+  const resource = useResource<{ records: CallRecord[] }>(
+    `/api/records?limit=${RECORDS_PAGE_SIZE}`,
+    intervalMs
+  );
   return { ...resource, records: resource.data?.records ?? [] };
 }
 
