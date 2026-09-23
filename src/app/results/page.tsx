@@ -507,7 +507,9 @@ function CallRecording({ callId }: { callId: string }) {
             className="inline-flex items-center gap-1.5 text-xs font-medium text-primary transition-colors hover:text-primary/80"
           >
             <Download className="h-3.5 w-3.5" />
-            Download
+            {/* Says the format, because someone downloading a call usually
+                wants to attach or forward it and needs to know what it is. */}
+            Download MP3
           </a>
         )}
       </div>
@@ -518,7 +520,7 @@ function CallRecording({ callId }: { callId: string }) {
         </p>
       ) : (
         <audio controls preload="none" src={src} onError={onError} className="mt-2 w-full">
-          <a href={`${src}?download=1`}>Download the recording</a>
+          <a href={`${src}?download=1`}>Download the recording as MP3</a>
         </audio>
       )}
     </section>

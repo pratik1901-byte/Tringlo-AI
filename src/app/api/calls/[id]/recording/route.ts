@@ -1,29 +1,38 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-import { getCallRecord, getCallRecordByAttemptId } from "@/lib/db";
-import { fetchRecording, isValidInteractionId } from "@/lib/recordings";
+import { notFound, ownedByTenant, requireAuth } from "@/lib/auth/guard";
+import { getCallRecord, getCallRecordByAttemptId, getLegacyTenantId } from "@/lib/db";
+import { fetchRecording, getRecordingAsMp3, isValidInteractionId } from "@/lib/recordings";
 import { clientKey, rateLimit } from "@/lib/security/rate-limit";
 
 /** Builds a download name people can recognise later, safe on any OS. */
-function downloadName(leadName: string, when: string | null): string {
+function downloadName(leadName: string, when: string | null, extension: "mp3" | "wav"): string {
   const person = (leadName || "call").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "") || "call";
   const date = when ? new Date(when) : new Date();
   const stamp = Number.isNaN(date.getTime())
     ? "unknown-date"
     : date.toISOString().slice(0, 16).replace(/[:T]/g, "-");
-  return `dialo-${person}-${stamp}.wav`;
+  return `dialo-${person}-${stamp}.${extension}`;
 }
 
 /**
  * GET /api/calls/[id]/recording
  *
- * The call's audio, as Sarvam recorded it. `?download=1` serves it as an
- * attachment. Range requests are honoured so the player can seek.
+ * The call's audio, as MP3. `?download=1` serves it as an attachment, and
+ * `?format=wav` serves the original WAV Sarvam sent, which is kept as the
+ * archival copy.
+ *
+ * MP3 is the default because it is roughly a quarter of the size, plays
+ * natively everywhere, and is what someone can actually attach to an email.
+ * The WAV is never discarded, so the MP3 can always be re-encoded.
  *
  * Addressed by Dialo's call id rather than Sarvam's interaction id: the
  * interaction id contains slashes and colons, and the browser has no business
  * handling provider identifiers anyway.
+ *
+ * Authenticated and tenant-scoped: this is a customer's recorded voice, and
+ * one business must never be able to play another's calls.
  */
 export async function GET(request: NextRequest, ctx: RouteContext<"/api/calls/[id]/recording">) {
   const limit = rateLimit(clientKey(request, "recording"), 60, 60_000);
@@ -31,11 +40,16 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/calls/[i
     return NextResponse.json({ error: "Too many requests." }, { status: 429 });
   }
 
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
   const { id } = await ctx.params;
   const record = getCallRecord(id) || getCallRecordByAttemptId(id);
 
-  if (!record) {
-    return NextResponse.json({ error: "No call found with that id." }, { status: 404 });
+  // Another tenant's recording reports as missing, not forbidden: a 403 would
+  // confirm the call exists.
+  if (!record || !ownedByTenant(record, auth.tenantId, getLegacyTenantId())) {
+    return notFound("No call found with that id.");
   }
 
   // Only a connected call was recorded. Saying so is more useful than a 404.
@@ -46,7 +60,13 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/calls/[i
     );
   }
 
-  const result = await fetchRecording(record.providerInteractionId);
+  // MP3 unless the original is asked for by name.
+  const wantsWav = request.nextUrl.searchParams.get("format") === "wav";
+
+  const result = wantsWav
+    ? await fetchRecording(record.providerInteractionId)
+    : await getRecordingAsMp3(record.providerInteractionId);
+
   if (!result.ok) {
     return NextResponse.json({ error: result.reason }, { status: result.status });
   }
@@ -56,13 +76,14 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/calls/[i
   const download = request.nextUrl.searchParams.get("download") === "1";
 
   const headers: Record<string, string> = {
-    "Content-Type": "audio/wav",
+    "Content-Type": wantsWav ? "audio/wav" : "audio/mpeg",
     "Accept-Ranges": "bytes",
     // Private: this is a customer's voice.
     "Cache-Control": "private, max-age=3600",
     "Content-Disposition": `${download ? "attachment" : "inline"}; filename="${downloadName(
       record.lead?.name ?? "call",
-      record.startedAt || record.requestedAt
+      record.startedAt || record.requestedAt,
+      wantsWav ? "wav" : "mp3"
     )}"`,
   };
 

@@ -19,6 +19,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { wavToMp3 } from "@/lib/recordings/mp3";
+
 const RECORDINGS_DIR = path.join(process.cwd(), "data", "recordings");
 const SARVAM_ANALYTICS = "https://apps.sarvam.ai/api/analytics/v1";
 
@@ -37,9 +39,9 @@ export function isValidInteractionId(id: string | null | undefined): id is strin
  * the slash and colons in an interaction id are illegal on Windows, and a slash
  * would otherwise be read as a directory.
  */
-function fileFor(interactionId: string): string {
+function fileFor(interactionId: string, extension: "wav" | "mp3" = "wav"): string {
   const safe = interactionId.replace(/[^A-Za-z0-9-]/g, "_");
-  const resolved = path.join(RECORDINGS_DIR, `${safe}.wav`);
+  const resolved = path.join(RECORDINGS_DIR, `${safe}.${extension}`);
   // Belt and braces: the validated id cannot produce this, but a future change
   // to the regex must not be able to turn this into a path traversal.
   if (!resolved.startsWith(RECORDINGS_DIR + path.sep)) {
@@ -157,4 +159,69 @@ export function prefetchRecordingLater(interactionId: string): void {
   };
 
   setTimeout(() => attempt(0), delays[0]);
+}
+
+
+// ------------------------------------------------------------
+// MP3
+// ------------------------------------------------------------
+//
+// The WAV stays the archival copy — it is what Sarvam sent, and re-encoding
+// from it is always possible. The MP3 is a derived artefact, cached beside it
+// so each call is encoded once rather than on every play.
+
+export type Mp3Result =
+  | { ok: true; audio: Buffer; source: "cache" | "encoded" }
+  | { ok: false; status: number; reason: string };
+
+/** The saved MP3, if this call has already been encoded. */
+export function readSavedMp3(interactionId: string): Buffer | null {
+  if (!isValidInteractionId(interactionId)) return null;
+  const file = fileFor(interactionId, "mp3");
+  return fs.existsSync(file) ? fs.readFileSync(file) : null;
+}
+
+/**
+ * Returns the call as MP3, fetching and encoding it if needed.
+ *
+ * Failure to cache is not failure to serve: if the disk write fails the audio
+ * is still returned, and the next request simply encodes it again.
+ */
+export async function getRecordingAsMp3(interactionId: string): Promise<Mp3Result> {
+  if (!isValidInteractionId(interactionId)) {
+    return { ok: false, status: 400, reason: "This call has no valid interaction id." };
+  }
+
+  const cached = readSavedMp3(interactionId);
+  if (cached) return { ok: true, audio: cached, source: "cache" };
+
+  const source = await fetchRecording(interactionId);
+  if (!source.ok) return source;
+
+  const encoded = await wavToMp3(source.audio);
+  if (!encoded.ok) {
+    console.warn(`RECORDING_MP3_FAILED interaction=${interactionId} reason=${encoded.reason}`);
+    return {
+      ok: false,
+      status: 415,
+      // Says what the audio actually is, so an unexpected codec from Sarvam is
+      // diagnosable rather than just "conversion failed".
+      reason: `This recording could not be converted to MP3. ${encoded.reason}`,
+    };
+  }
+
+  try {
+    fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
+    const file = fileFor(interactionId, "mp3");
+    const tmp = `${file}.tmp`;
+    fs.writeFileSync(tmp, encoded.mp3);
+    fs.renameSync(tmp, file);
+    console.log(
+      `RECORDING_MP3_SAVED interaction=${interactionId} wav=${source.audio.length} mp3=${encoded.mp3.length}`
+    );
+  } catch (error: unknown) {
+    console.error("RECORDING_MP3_SAVE_FAILED", error instanceof Error ? error.message : error);
+  }
+
+  return { ok: true, audio: encoded.mp3, source: "encoded" };
 }
