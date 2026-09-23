@@ -27,6 +27,7 @@ import {
 import type { PublicUser, Session, User } from "@/lib/types";
 import {
   SESSION_TOUCH_INTERVAL_MS,
+  SHORT_SESSION_TTL_MS,
   extractSessionToken,
   hashSessionToken,
   isSessionExpired,
@@ -103,7 +104,13 @@ export async function requireAuth(request: Request): Promise<AuthResult> {
   // most once every few minutes so this does not become a write per request.
   const now = Date.now();
   if (now - new Date(session.lastSeenAt).getTime() > SESSION_TOUCH_INTERVAL_MS) {
-    touchSession(session.id, new Date(now).toISOString(), sessionExpiry(now));
+    // Extended by the length this session was issued with, so an unremembered
+    // session stays short-lived instead of being quietly promoted to 30 days
+    // by the act of using it.
+    const issuedFor =
+      new Date(session.expiresAt).getTime() - new Date(session.createdAt).getTime();
+    const remembered = issuedFor > SHORT_SESSION_TTL_MS * 2;
+    touchSession(session.id, new Date(now).toISOString(), sessionExpiry(now, remembered));
   }
 
   return { ok: true, user, session, tenantId: user.tenantId };

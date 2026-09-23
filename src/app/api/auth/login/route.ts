@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     });
   }
 
-  let body: { email?: unknown; password?: unknown };
+  let body: { email?: unknown; password?: unknown; remember?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -57,6 +57,9 @@ export async function POST(request: Request) {
 
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const password = typeof body.password === "string" ? body.password : "";
+  // Defaults to true so an API client that does not send the field keeps the
+  // long-lived behaviour it had before the checkbox existed.
+  const remember = body.remember === undefined ? true : body.remember === true;
 
   if (!email || !password) {
     return fail(400, "missing_credentials", "Email and password are both required.");
@@ -117,7 +120,7 @@ export async function POST(request: Request) {
     userId: user.id,
     tenantId: user.tenantId,
     createdAt: new Date(now).toISOString(),
-    expiresAt: sessionExpiry(now),
+    expiresAt: sessionExpiry(now, remember),
     lastSeenAt: new Date(now).toISOString(),
     client: request.headers.get("x-dialo-client") === "mobile" ? "mobile" : "web",
   });
@@ -128,12 +131,15 @@ export async function POST(request: Request) {
     {
       user: toPublicUser(user),
       token,
-      expiresAt: sessionExpiry(now),
+      expiresAt: sessionExpiry(now, remember),
     },
     {
       status: 200,
       headers: {
-        "Set-Cookie": sessionCookie(token, { secure: isSecureRequest(request) }),
+        "Set-Cookie": sessionCookie(token, {
+          secure: isSecureRequest(request),
+          remember,
+        }),
         "Cache-Control": "no-store",
       },
     }

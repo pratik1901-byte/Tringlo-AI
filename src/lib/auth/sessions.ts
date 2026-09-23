@@ -28,8 +28,20 @@ import { createHash, randomBytes, timingSafeEqual } from "crypto";
 
 export const SESSION_COOKIE = "dialo_session";
 
-/** A session outlives a restart of the app, which is the point of persistence. */
+/**
+ * A remembered session outlives a restart of the app, which is the point of
+ * persistence.
+ */
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * How long a session lasts when "remember me" was not ticked.
+ *
+ * Long enough for a working day, short enough that a shared or public machine
+ * does not stay signed in overnight. This is what makes the checkbox mean
+ * something rather than decorate the form.
+ */
+export const SHORT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
 /**
  * How stale `lastSeenAt` may get before a request refreshes it.
@@ -91,7 +103,10 @@ export function extractSessionToken(request: Request): string | null {
  * drops a Secure cookie there and the developer sees a login that appears to
  * succeed and then immediately fails.
  */
-export function sessionCookie(token: string, options: { secure: boolean }): string {
+export function sessionCookie(
+  token: string,
+  options: { secure: boolean; remember?: boolean }
+): string {
   const parts = [
     `${SESSION_COOKIE}=${encodeURIComponent(token)}`,
     "Path=/",
@@ -99,7 +114,11 @@ export function sessionCookie(token: string, options: { secure: boolean }): stri
     // Lax keeps the cookie on top-level navigation back into the app while
     // still refusing it on cross-site POSTs, which is the CSRF case that matters.
     "SameSite=Lax",
-    `Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`,
+    // Without "remember me" the cookie is a session cookie: it carries no
+    // Max-Age and the browser drops it when the window closes.
+    ...(options.remember === false
+      ? []
+      : [`Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`]),
   ];
   if (options.secure) parts.push("Secure");
   return parts.join("; ");
@@ -123,8 +142,8 @@ export function isSecureRequest(request: Request): boolean {
   }
 }
 
-export function sessionExpiry(from = Date.now()): string {
-  return new Date(from + SESSION_TTL_MS).toISOString();
+export function sessionExpiry(from = Date.now(), remember = true): string {
+  return new Date(from + (remember ? SESSION_TTL_MS : SHORT_SESSION_TTL_MS)).toISOString();
 }
 
 export function isSessionExpired(expiresAt: string, now = Date.now()): boolean {

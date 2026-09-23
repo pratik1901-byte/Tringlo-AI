@@ -40,7 +40,11 @@ interface AuthState {
     expired: boolean;
     /** Asks the server who this is. Called on load and after signing in. */
     refresh: () => Promise<void>;
-    signIn: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+    signIn: (
+        email: string,
+        password: string,
+        remember?: boolean
+    ) => Promise<{ ok: boolean; error?: string }>;
     signOut: () => Promise<void>;
     /** Called when any request is rejected, so one 401 signs out every screen. */
     handleUnauthorized: () => void;
@@ -67,12 +71,12 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         }
     },
 
-    signIn: async (email, password) => {
+    signIn: async (email, password, remember = true) => {
         try {
             const response = await fetch("/api/auth/login", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email, password }),
+                body: JSON.stringify({ email, password, remember }),
             });
             const body = await response.json().catch(() => ({}));
 
