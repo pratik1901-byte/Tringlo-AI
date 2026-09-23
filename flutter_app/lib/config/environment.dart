@@ -31,10 +31,23 @@ abstract final class Environment {
   static const Duration requestTimeout = Duration(seconds: 20);
   static const Duration longRequestTimeout = Duration(seconds: 45);
 
+  /// The origin requests actually go to.
+  ///
+  /// An empty [apiBaseUrl] means same-origin, which is how the web build is
+  /// served in production: the backend hosts the compiled app, so there is no
+  /// cross-origin request, no CORS to configure, and the httpOnly session
+  /// cookie is sent on its own. `Uri.base` is the page's own URL on web.
+  static String get origin {
+    if (apiBaseUrl.isNotEmpty) {
+      return apiBaseUrl.endsWith('/')
+          ? apiBaseUrl.substring(0, apiBaseUrl.length - 1)
+          : apiBaseUrl;
+    }
+    return Uri.base.origin;
+  }
+
   static Uri resolve(String path, [Map<String, String>? query]) {
-    final base = apiBaseUrl.endsWith('/')
-        ? apiBaseUrl.substring(0, apiBaseUrl.length - 1)
-        : apiBaseUrl;
+    final base = origin;
     final normalised = path.startsWith('/') ? path : '/$path';
     return Uri.parse('$base$normalised').replace(
       queryParameters: (query == null || query.isEmpty) ? null : query,
