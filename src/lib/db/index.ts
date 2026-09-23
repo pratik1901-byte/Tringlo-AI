@@ -21,6 +21,7 @@ import type {
   Tenant,
   User,
 } from "@/lib/types";
+import type { CustomerProfile, MemoryItem } from "@/lib/memory/types";
 import { SCHEDULABLE_FOLLOW_UP_STATUSES } from "@/lib/types";
 
 export interface RawEvent {
@@ -84,6 +85,15 @@ export interface DatabaseSchema {
    * every other tenant.
    */
   legacyTenantId: string | null;
+  /**
+   * What Dialo has learned about each customer, and who each customer is.
+   *
+   * Kept apart from callRecords on purpose: a transcript is evidence of one
+   * conversation, a memory is a durable claim that later calls can confirm or
+   * correct. Merging them would make correction impossible.
+   */
+  customerProfiles: CustomerProfile[];
+  memoryItems: MemoryItem[];
 }
 
 /**
@@ -126,6 +136,8 @@ function emptyDb(): DatabaseSchema {
     users: [],
     sessions: [],
     legacyTenantId: null,
+    customerProfiles: [],
+    memoryItems: [],
   };
 }
 
@@ -165,6 +177,8 @@ function readDb(): DatabaseSchema {
         users: Array.isArray(parsed.users) ? parsed.users : [],
         sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
         legacyTenantId: parsed.legacyTenantId ?? null,
+        customerProfiles: Array.isArray(parsed.customerProfiles) ? parsed.customerProfiles : [],
+        memoryItems: Array.isArray(parsed.memoryItems) ? parsed.memoryItems : [],
       };
       return globalThis.__dialoDatabaseCache;
     } catch (err) {
@@ -867,4 +881,112 @@ export function setLegacyTenantId(tenantId: string): boolean {
   db.legacyTenantId = tenantId;
   writeDb(db);
   return true;
+}
+
+// ------------------------------------------------------------
+// CUSTOMER MEMORY
+// ------------------------------------------------------------
+//
+// Every function here takes a tenantId and filters on it. That is deliberate
+// repetition: memory holds personal information customers gave one business in
+// confidence, and an accessor that could be called without a tenant is an
+// accessor that will eventually be called without one.
+
+export function getCustomerProfile(
+  tenantId: string,
+  customerId: string
+): CustomerProfile | undefined {
+  return readDb().customerProfiles.find(
+    (profile) => profile.id === customerId && profile.tenantId === tenantId
+  );
+}
+
+/** Finds a customer by their normalised ten-digit number within one business. */
+export function findCustomerProfileByPhone(
+  tenantId: string,
+  phoneNational: string
+): CustomerProfile | undefined {
+  return readDb().customerProfiles.find(
+    (profile) => profile.tenantId === tenantId && profile.phoneNational === phoneNational
+  );
+}
+
+export function saveCustomerProfile(profile: CustomerProfile): CustomerProfile {
+  const db = readDb();
+  const index = db.customerProfiles.findIndex(
+    (existing) => existing.id === profile.id && existing.tenantId === profile.tenantId
+  );
+  if (index >= 0) db.customerProfiles[index] = profile;
+  else db.customerProfiles.push(profile);
+  writeDb(db);
+  return profile;
+}
+
+/** Every memory for one customer, including corrected and forgotten items. */
+export function getMemoryItems(tenantId: string, customerId: string): MemoryItem[] {
+  return readDb().memoryItems.filter(
+    (item) => item.tenantId === tenantId && item.customerId === customerId
+  );
+}
+
+export function saveMemoryItems(items: MemoryItem[]): void {
+  if (items.length === 0) return;
+  const db = readDb();
+
+  for (const item of items) {
+    const index = db.memoryItems.findIndex(
+      (existing) => existing.id === item.id && existing.tenantId === item.tenantId
+    );
+    if (index >= 0) db.memoryItems[index] = item;
+    else db.memoryItems.push(item);
+  }
+
+  writeDb(db);
+}
+
+/**
+ * Marks a customer's memory forgotten, or erases it outright.
+ *
+ * `hard` is what a deletion request means: the rows go, rather than being
+ * hidden. Soft deletion keeps provenance, which is right for "that's wrong"
+ * and wrong for "delete what you hold about me".
+ */
+export function forgetCustomerMemory(
+  tenantId: string,
+  customerId: string,
+  options: { hard: boolean; reason?: string } = { hard: false }
+): number {
+  const db = readDb();
+  const now = new Date().toISOString();
+
+  const mine = (item: MemoryItem) =>
+    item.tenantId === tenantId && item.customerId === customerId;
+
+  let affected = 0;
+
+  if (options.hard) {
+    const before = db.memoryItems.length;
+    db.memoryItems = db.memoryItems.filter((item) => !mine(item));
+    affected = before - db.memoryItems.length;
+
+    // The rolling summaries are conversation content too, so a hard delete
+    // takes them with it; the profile stays so the number is still known.
+    const profile = db.customerProfiles.find(
+      (candidate) => candidate.id === customerId && candidate.tenantId === tenantId
+    );
+    if (profile) {
+      profile.recentSummaries = [];
+      profile.updatedAt = now;
+    }
+  } else {
+    for (const item of db.memoryItems) {
+      if (!mine(item) || item.status === "forgotten") continue;
+      item.status = "forgotten";
+      item.updatedAt = now;
+      affected++;
+    }
+  }
+
+  if (affected > 0 || options.hard) writeDb(db);
+  return affected;
 }

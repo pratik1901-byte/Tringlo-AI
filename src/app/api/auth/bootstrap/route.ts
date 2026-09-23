@@ -2,15 +2,16 @@
 // POST /api/auth/bootstrap
 // ============================================================
 //
-// Creates the first tenant and its owner account.
+// Creates a workspace: a tenant and its owner account.
 //
 // There are no hardcoded demo credentials anywhere in Dialo, so this is how
-// the first account comes to exist. It is not a public sign-up route:
+// the first account comes to exist, and how further ones are added. Each call
+// creates a SEPARATE tenant, so two accounts made here see entirely different
+// leads, calls, follow-ups and customer memory.
 //
-//   - It refuses once any user exists, so it cannot be used twice.
-//   - It is reachable only from a browser on the server machine, or with
-//     DIALO_INTERNAL_SECRET. A publicly tunnelled dev server therefore cannot
-//     have its first account claimed by whoever finds the URL first.
+// It is not a public sign-up route: it is reachable only from a browser on the
+// server machine, or with DIALO_INTERNAL_SECRET. A publicly tunnelled dev
+// server therefore cannot have accounts created by whoever finds the URL.
 //
 // Everything already in the database — the real leads, calls and follow-ups —
 // predates tenancy and is adopted by this first tenant, which is recorded as
@@ -23,7 +24,7 @@ import { timingSafeEqual } from "crypto";
 
 import { isLocalRequest } from "@/lib/auth/local-request";
 import { checkPasswordPolicy, hashPassword } from "@/lib/auth/passwords";
-import { countUsers, saveTenant, saveUser, setLegacyTenantId } from "@/lib/db";
+import { countUsers, findUserByEmail, saveTenant, saveUser, setLegacyTenantId } from "@/lib/db";
 import { clientKey, rateLimit } from "@/lib/security/rate-limit";
 import type { Tenant, User } from "@/lib/types";
 
@@ -48,12 +49,6 @@ export async function POST(request: Request) {
     return fail(429, "rate_limited", "Too many attempts. Try again later.");
   }
 
-  // Checked before authorising, so a public caller learns nothing about
-  // whether setup is available beyond what /api/auth/setup-status already says.
-  if (countUsers() > 0) {
-    return fail(409, "already_bootstrapped", "An account already exists. Use the login endpoint.");
-  }
-
   // Two ways in, and exactly two.
   //
   //   - From a browser on the server machine, while no account exists. Someone
@@ -72,7 +67,7 @@ export async function POST(request: Request) {
     return fail(
       401,
       "unauthorized",
-      "First-run setup must be done from the server machine, or with the internal secret."
+      "Accounts can only be created from the server machine, or with the internal secret."
     );
   }
 
@@ -100,6 +95,15 @@ export async function POST(request: Request) {
     return fail(400, "weak_password", policy.reason ?? "That password is not acceptable.");
   }
 
+  // Two accounts cannot share a login.
+  if (findUserByEmail(email)) {
+    return fail(409, "email_taken", "An account with that email already exists.");
+  }
+
+  // Whether this is the very first account decides one thing only: who adopts
+  // the data that predates tenancy.
+  const isFirstAccount = countUsers() === 0;
+
   const now = new Date().toISOString();
   const tenant: Tenant = {
     id: `tenant_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -122,10 +126,14 @@ export async function POST(request: Request) {
   };
   saveUser(user);
 
-  // Adopt the pre-tenancy data rather than orphaning it.
-  setLegacyTenantId(tenant.id);
+  // The first account adopts the data that predates tenancy rather than
+  // orphaning it. Later accounts must not: handing a second business the
+  // first one's customers is precisely what tenant isolation exists to stop.
+  if (isFirstAccount) setLegacyTenantId(tenant.id);
 
-  console.log(`AUTH_BOOTSTRAP tenant=${tenant.id} user=${user.id}`);
+  console.log(
+    `AUTH_ACCOUNT_CREATED tenant=${tenant.id} user=${user.id} first=${isFirstAccount}`
+  );
 
   return NextResponse.json(
     {

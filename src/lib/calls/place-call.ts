@@ -17,10 +17,12 @@ import {
   getAgentConfig,
   getCallRecordsForLead,
   getLead,
+  getLegacyTenantId,
   getWebhookBaseUrl,
   saveCallRecord,
   saveLead,
 } from "@/lib/db";
+import { getContextForCall } from "@/lib/memory/service";
 import { buildAgentKnowledgeContext } from "@/lib/rag";
 import { SarvamClientError, sarvamVoiceService } from "@/lib/providers/sarvam";
 import { checkWebhookReachable, reachabilityCheckDisabled } from "@/lib/calls/webhook-reachability";
@@ -203,9 +205,20 @@ export async function placeCall(input: PlaceCallInput): Promise<PlaceCallResult>
     lead.notes || "",
   ]);
 
-  const previousCall = getCallRecordsForLead(leadId).find(
-    (record) => record.status === "connected" && record.aiSummary
-  );
+  // What Priya should already know about this person.
+  //
+  // This used to be the last connected call's summary verbatim. Customer
+  // memory replaces it: durable facts the customer stated, plus a condensed
+  // history, chosen for this particular call rather than pasted wholesale.
+  // An unknown customer yields an empty context, which is what keeps a genuine
+  // first call sounding like one.
+  const tenantId = lead.tenantId ?? getLegacyTenantId();
+  const memoryContext = tenantId
+    ? getContextForCall(tenantId, lead, {
+        isFollowUp: input.origin === "scheduler",
+        topic: input.campaignName ?? agentConfig.salesObjective ?? null,
+      })
+    : null;
 
   const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
@@ -222,11 +235,18 @@ export async function placeCall(input: PlaceCallInput): Promise<PlaceCallResult>
       agentConfig,
       campaignId: input.campaignId,
       campaignName: input.campaignName,
-      previousInteraction: previousCall?.aiSummary ?? "",
+      previousInteraction: memoryContext?.previousInteraction ?? "",
       ragContext: knowledge.compactContext,
       webhookBaseUrl,
       callId,
     });
+
+    if (memoryContext && !memoryContext.isEmpty) {
+      console.log(
+        `MEMORY_CONTEXT_SENT call=${callId} items=${memoryContext.usedItems.length} ` +
+          `followUp=${input.origin === "scheduler"} chars=${memoryContext.previousInteraction.length}`
+      );
+    }
 
     saveLead({ ...lead, status: "calling", lastAttemptId: result.attemptId });
 

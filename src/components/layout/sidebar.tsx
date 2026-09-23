@@ -73,22 +73,33 @@ export function Sidebar() {
 
             {/* User profile at bottom — matches Figma */}
             <div className="border-t border-sidebar-border p-3">
+                {/* Which account and which workspace. The workspace name matters
+                    because each one has entirely separate leads, calls and
+                    customer memory — knowing which you are in is the difference
+                    between "my data is missing" and "I am signed into the other
+                    one". */}
                 <div className="flex items-center gap-2.5 rounded-lg px-2 py-2">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-                        {(user?.name || "U").charAt(0).toUpperCase()}{(user?.name || "Us").charAt(1)?.toUpperCase() || ""}
+                        {(user?.name || "U").charAt(0).toUpperCase()}
+                        {(user?.name || "Us").charAt(1)?.toUpperCase() || ""}
                     </div>
                     <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium leading-none">{user?.name || "User"}</p>
-                        <p className="truncate text-[11px] text-muted-foreground mt-0.5">{user?.email || ""}</p>
+                        <p className="truncate text-sm font-medium leading-none">
+                            {user?.name || "User"}
+                        </p>
+                        <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                            {user?.tenantName || user?.email || ""}
+                        </p>
                     </div>
-                    <button
-                        onClick={signOut}
-                        className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-                        title="Sign out"
-                    >
-                        <LogOut className="h-3.5 w-3.5" />
-                    </button>
                 </div>
+
+                <button
+                    onClick={signOut}
+                    className="mt-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                >
+                    <LogOut className="h-4 w-4 shrink-0" />
+                    Sign out
+                </button>
             </div>
         </aside>
     );

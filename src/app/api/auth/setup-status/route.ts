@@ -22,11 +22,11 @@ export async function GET(request: Request) {
   return NextResponse.json(
     {
       needsSetup,
-      // Whether *this* caller may run setup, so a browser on the public URL is
-      // told to use the server machine rather than shown a form that will fail.
-      canSetupHere:
-        needsSetup &&
-        (isLocalRequest(request) || Boolean(process.env.DIALO_INTERNAL_SECRET)),
+      // Whether *this* caller may create an account, so a browser on the public
+      // URL is told to use the server machine rather than shown a form that
+      // will fail. Unlike needsSetup this stays true once accounts exist:
+      // further workspaces can still be added from the machine.
+      canSetupHere: isLocalRequest(request),
       localRequest: isLocalRequest(request),
     },
     { headers: { "Cache-Control": "no-store" } }

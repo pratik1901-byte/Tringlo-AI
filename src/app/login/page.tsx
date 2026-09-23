@@ -116,15 +116,23 @@ export default function LoginPage() {
     }
   };
 
-  const isSetup = setup?.needsSetup === true && setup.canSetupHere;
-  const blockedSetup = setup?.needsSetup === true && !setup.canSetupHere;
+  // First run shows the create form outright. Afterwards it is opt-in, so the
+  // common case — signing in — stays the default.
+  const [creating, setCreating] = useState(false);
+  const firstRun = setup?.needsSetup === true;
+  const isSetup = (firstRun || creating) && setup?.canSetupHere === true;
+  const blockedSetup = firstRun && setup?.canSetupHere !== true;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-6">
       <div className="w-full max-w-sm">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Dialo</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {isSetup ? "Create the first account for this workspace." : "Sign in to continue."}
+          {isSetup
+            ? firstRun
+              ? "Create the first account for this workspace."
+              : "Create a separate workspace with its own leads, calls and history."
+            : "Sign in to continue."}
         </p>
 
         {expired && !error && (
@@ -220,6 +228,19 @@ export default function LoginPage() {
               )}
             </button>
           </form>
+        )}
+
+        {setup?.canSetupHere === true && !firstRun && (
+          <button
+            type="button"
+            onClick={() => {
+              setCreating((value) => !value);
+              setError(null);
+            }}
+            className="mt-5 text-sm text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground"
+          >
+            {creating ? "Back to sign in" : "Create a separate workspace"}
+          </button>
         )}
       </div>
     </div>

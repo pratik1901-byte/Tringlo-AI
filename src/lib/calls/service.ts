@@ -25,6 +25,7 @@ import {
 } from "@/lib/db";
 import { deriveAiStatus, parseSarvamWebhook } from "@/lib/providers/sarvam/webhooks";
 import { prefetchRecordingLater } from "@/lib/recordings";
+import { recordCallInMemory } from "@/lib/memory/service";
 import type { SarvamWebhookPayload } from "@/lib/providers/sarvam/types";
 import type { AICallResult, CallRecord, CallStatus, FollowUp, Lead } from "@/lib/types";
 import { isTerminalCallStatus } from "@/lib/types";
@@ -266,6 +267,21 @@ export function applySarvamEvent(rawPayload: SarvamWebhookPayload): ApplyResult 
   };
 
   const savedRecord = saveCallRecord(updated);
+
+  // Learn from the conversation, now that the record is authoritative.
+  //
+  // Deliberately after the save and deliberately not awaited on anything
+  // external: memory is valuable but it is not worth failing a webhook over.
+  // A redelivered webhook is harmless here — repeated facts confirm rather
+  // than duplicate, and the summary is keyed by call id.
+  try {
+    recordCallInMemory(savedRecord);
+  } catch (error) {
+    console.error(
+      `MEMORY_UPDATE_FAILED call=${savedRecord.id}`,
+      error instanceof Error ? error.message : error
+    );
+  }
 
   // Save the audio in the background. The webhook never carries it, and it is
   // not always ready the moment the call ends, so this retries on its own and
