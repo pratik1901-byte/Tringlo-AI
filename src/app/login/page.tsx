@@ -4,23 +4,22 @@
 // Dialo AI — Authentication
 // ============================================================
 //
-// A split composition: the brand and its signal visual hold the left, the form
-// holds the right. Asymmetric on purpose — the form column is narrower than the
-// brand column, which reads as editorial rather than as two equal halves.
+// A centred panel over a living communication network.
 //
-// Three modes on one screen, because they are the same task: sign in, create a
-// workspace, reset a password. They share a card and cross-fade, so switching
-// never feels like a page load.
+// The scene is infrastructure made visible: routed paths, nodes that activate,
+// signals travelling between them. It reacts to what the person is doing —
+// waking when the email field takes focus, answering while they type, and
+// narrowing to a closed circuit while a password is entered — but it never
+// moves the form, never delays it, and never animates an outcome the server
+// has not confirmed.
 //
-// What is deliberately absent:
+// All choreography lives in lib/auth-scene/timelines. This file owns markup,
+// form state and the real network calls, and asks the scene for behaviour by
+// name. Keeping the split means the animation can be tuned in one place.
 //
-//   - Provider buttons. Dialo has no OAuth, and a Google button that opens
-//     nothing is exactly the decoration the brief forbids.
-//   - A "we emailed you a link" flow. There is no email service. Recovery
-//     really happens from the server machine, and the screen says so.
-//
-// Everything here talks to the real backend. There is no path through this
-// screen that produces a session the server did not issue.
+// What is deliberately absent: provider buttons (Dialo has no OAuth), and a
+// "check your inbox" reset (no email service — recovery is real and happens
+// from the server machine).
 // ============================================================
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -29,8 +28,9 @@ import { Check, Eye, EyeOff, Loader2 } from "lucide-react";
 import gsap from "gsap";
 
 import { useAuthStore } from "@/lib/store";
-import { MOTION, prefersReducedMotion } from "@/lib/animation";
-import { SignalField } from "@/components/auth/signal-field";
+import { prefersReducedMotion } from "@/lib/animation";
+import { createAuthScene, type AuthScene } from "@/lib/auth-scene/timelines";
+import { CommunicationNetwork } from "@/components/auth/communication-network";
 
 type Mode = "signIn" | "signUp" | "reset";
 
@@ -62,10 +62,12 @@ export default function LoginPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [density, setDensity] = useState<"full" | "reduced">("full");
 
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const cardRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const sceneRef = useRef<AuthScene | null>(null);
 
   // ---------------------------------------------------------------- setup
   const loadSetupStatus = useCallback(async () => {
@@ -78,84 +80,67 @@ export default function LoginPage() {
       setSetup(status);
 
       // First run has no account to sign into, so the form opens on create.
-      // Decided here, where the answer arrives, rather than in an effect
-      // reacting to it — that would be a render caused by a render.
+      // Decided where the answer arrives rather than in an effect reacting to
+      // it, which would be a render caused by a render.
       if (status.needsSetup && status.canSetupHere) setMode("signUp");
     } catch {
-      // Unreachable status endpoint: show the ordinary sign-in form, which is
-      // right for an installation that already has accounts.
       setSetup({ needsSetup: false, canSetupHere: false });
     }
   }, []);
 
-  // Scheduled rather than called inline, matching lib/use-dialo-data: resolving
-  // it synchronously inside the effect body cascades an extra render.
   useEffect(() => {
     const timer = setTimeout(loadSetupStatus, 0);
     return () => clearTimeout(timer);
   }, [loadSetupStatus]);
 
-  // ---------------------------------------------------------------- entrance
+  // ---------------------------------------------------------------- scene
   useEffect(() => {
-    if (prefersReducedMotion()) return;
+    const stage = stageRef.current;
+    if (!stage) return;
 
-    const context = gsap.context(() => {
-      const timeline = gsap.timeline();
+    // Density is chosen once per breakpoint crossing rather than per resize
+    // frame: rebuilding the scene while someone drags a window edge is worse
+    // than briefly showing the wrong density.
+    const query = window.matchMedia("(max-width: 860px)");
+    const applyDensity = () => setDensity(query.matches ? "reduced" : "full");
+    applyDensity();
+    query.addEventListener("change", applyDensity);
 
-      // The brand settles first, then the form arrives — the eye is given
-      // somewhere to land before it is asked to do anything.
-      timeline.fromTo(
-        "[data-brand-line]",
-        { opacity: 0, y: 18 },
-        {
-          opacity: 1,
-          y: 0,
-          duration: MOTION.slow,
-          ease: MOTION.ease,
-          stagger: 0.08,
-          clearProps: "transform",
-        }
-      );
+    const scene = createAuthScene({ root: stage, reduced: prefersReducedMotion() });
+    sceneRef.current = scene;
+    scene.enter();
 
-      timeline.fromTo(
-        cardRef.current,
-        { opacity: 0, y: 20 },
-        { opacity: 1, y: 0, duration: MOTION.base, ease: MOTION.ease, clearProps: "transform" },
-        0.18
-      );
-    }, rootRef);
+    // Pointer parallax, normalised to -1..1. Passive, and the scene throttles
+    // it internally with quickTo.
+    const onPointerMove = (event: PointerEvent) => {
+      const x = (event.clientX / window.innerWidth) * 2 - 1;
+      const y = (event.clientY / window.innerHeight) * 2 - 1;
+      scene.parallax(x, y);
+    };
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
 
-    return () => context.revert();
+    // A hidden tab should not be animating. gsap.ticker.sleep stops the whole
+    // engine, which is cheaper and more complete than pausing each timeline.
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") gsap.ticker.sleep();
+      else gsap.ticker.wake();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      query.removeEventListener("change", applyDensity);
+      window.removeEventListener("pointermove", onPointerMove);
+      document.removeEventListener("visibilitychange", onVisibility);
+      scene.destroy();
+      sceneRef.current = null;
+    };
+    // The scene is built once. Density changes re-render the SVG beneath it,
+    // and the scene re-queries the DOM on every call, so it stays correct.
   }, []);
 
-  // Cross-fade when the mode changes, so switching reads as one surface
-  // rearranging rather than a new page. Fields stagger in behind it.
+  // Channel change: the panel cross-fades and the network reroutes.
   useEffect(() => {
-    if (prefersReducedMotion() || !panelRef.current) return;
-
-    const context = gsap.context(() => {
-      gsap.fromTo(
-        panelRef.current,
-        { opacity: 0, y: 10 },
-        { opacity: 1, y: 0, duration: MOTION.base, ease: MOTION.ease, clearProps: "transform" }
-      );
-
-      gsap.fromTo(
-        "[data-field]",
-        { opacity: 0, y: 10 },
-        {
-          opacity: 1,
-          y: 0,
-          duration: MOTION.base,
-          ease: MOTION.ease,
-          stagger: 0.04,
-          delay: 0.05,
-          clearProps: "transform",
-        }
-      );
-    }, panelRef);
-
-    return () => context.revert();
+    sceneRef.current?.switchChannel(contentRef.current);
   }, [mode, setup]);
 
   // ---------------------------------------------------------------- helpers
@@ -166,16 +151,6 @@ export default function LoginPage() {
     setFieldErrors({});
     setPassword("");
     setConfirmPassword("");
-  };
-
-  /** Settles the card back into place. Used only on a rejected submission. */
-  const rejectCard = () => {
-    if (prefersReducedMotion() || !cardRef.current) return;
-    gsap.fromTo(
-      cardRef.current,
-      { x: -5 },
-      { x: 0, duration: 0.45, ease: "elastic.out(1, 0.45)" }
-    );
   };
 
   const validate = (): boolean => {
@@ -198,23 +173,23 @@ export default function LoginPage() {
     }
 
     setFieldErrors(errors);
-    if (Object.keys(errors).length > 0) rejectCard();
+    if (Object.keys(errors).length > 0) sceneRef.current?.failure(panelRef.current);
     return Object.keys(errors).length === 0;
   };
 
-  /** Plays the card out, then navigates. Only ever called after a real session. */
+  /** Only ever called once the server has issued a session. */
   const enterApp = () => {
-    if (prefersReducedMotion() || !cardRef.current) {
+    const scene = sceneRef.current;
+    if (!scene) {
       router.replace("/dashboard");
       return;
     }
-    gsap.to(cardRef.current, {
-      opacity: 0,
-      y: -12,
-      duration: MOTION.fast,
-      ease: MOTION.easeInOut,
-      onComplete: () => router.replace("/dashboard"),
-    });
+    scene.success(() => router.replace("/dashboard"));
+  };
+
+  const reject = (message: string) => {
+    setError(message);
+    sceneRef.current?.failure(panelRef.current);
   };
 
   // ---------------------------------------------------------------- submit
@@ -231,8 +206,7 @@ export default function LoginPage() {
       if (mode === "signIn") {
         const result = await signIn(email, password, remember);
         if (!result.ok) {
-          setError(result.error ?? "Could not sign in.");
-          rejectCard();
+          reject(result.error ?? "Could not sign in.");
           return;
         }
         setPassword("");
@@ -249,12 +223,10 @@ export default function LoginPage() {
         const body = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-          setError(body?.error?.message ?? "Could not create the workspace.");
-          rejectCard();
+          reject(body?.error?.message ?? "Could not create the workspace.");
           return;
         }
 
-        // Created; sign in with it rather than asking for the same details twice.
         const result = await signIn(email, password, remember);
         setPassword("");
         setConfirmPassword("");
@@ -270,7 +242,6 @@ export default function LoginPage() {
         return;
       }
 
-      // reset
       const response = await fetch("/api/auth/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -279,8 +250,7 @@ export default function LoginPage() {
       const body = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        setError(body?.error?.message ?? "Could not reset the password.");
-        rejectCard();
+        reject(body?.error?.message ?? "Could not reset the password.");
         return;
       }
 
@@ -289,8 +259,7 @@ export default function LoginPage() {
       setPassword("");
       setConfirmPassword("");
     } catch {
-      setError("Could not reach the server. Check your connection and try again.");
-      rejectCard();
+      reject("Could not reach the server. Check your connection and try again.");
     } finally {
       setBusy(false);
     }
@@ -307,7 +276,7 @@ export default function LoginPage() {
         : "Create a workspace"
       : mode === "reset"
         ? "Reset password"
-        : "Sign in";
+        : "Welcome back";
 
   const subheading =
     mode === "signUp"
@@ -316,72 +285,41 @@ export default function LoginPage() {
         : "A separate workspace, with its own leads, calls and history."
       : mode === "reset"
         ? "Set a new password for an existing account."
-        : "Welcome back.";
+        : "Sign in to your workspace.";
 
   const submitLabel =
     mode === "signUp" ? "Create workspace" : mode === "reset" ? "Update password" : "Sign in";
 
   return (
-    <div ref={rootRef} className="min-h-screen bg-background lg:grid lg:grid-cols-[1.15fr_1fr]">
-      {/* ---------------------------------------------------------------- */}
-      {/* Brand. A full column on desktop; a compact header on phones, where  */}
-      {/* the form must be reachable without scrolling past a hero.          */}
-      {/* ---------------------------------------------------------------- */}
-      <section className="relative flex flex-col justify-between overflow-hidden border-b border-border bg-card px-6 py-7 lg:border-b-0 lg:border-r lg:px-14 lg:py-14">
-        <div className="flex items-center gap-2.5" data-brand-line>
-          <span className="h-5 w-[3px] rounded-full bg-primary" />
-          <span className="text-sm font-semibold tracking-tight text-foreground">Dialo</span>
-        </div>
+    <div
+      ref={stageRef}
+      className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-5 py-10"
+    >
+      <CommunicationNetwork density={density} />
 
-        <div className="hidden max-w-lg lg:block">
-          <h1
-            data-brand-line
-            className="text-[2.75rem] font-semibold leading-[1.08] tracking-[-0.03em] text-foreground"
-          >
-            Every conversation,
-            <br />
-            accounted for.
-          </h1>
-          <p
-            data-brand-line
-            className="mt-5 max-w-md text-[15px] leading-relaxed text-muted-foreground"
-          >
-            Dialo places the call, listens, and records what was actually said — so what you read
-            afterwards is the conversation, not an estimate of it.
-          </p>
-        </div>
-
-        {/* The signal. Sits low in the column so it reads as a baseline the
-            type rests on, rather than a banner competing with it. */}
-        <div
-          data-brand-line
-          className="pointer-events-none mt-6 h-16 w-full text-primary sm:h-20 lg:mt-0 lg:h-36"
-        >
-          <SignalField className="h-full w-full" />
-        </div>
-      </section>
-
-      {/* ---------------------------------------------------------------- */}
-      {/* Form                                                              */}
-      {/* ---------------------------------------------------------------- */}
-      <section className="flex items-center justify-center px-6 py-10 lg:px-12">
-        <div ref={cardRef} className="w-full max-w-[380px]">
+      {/* The panel. Sits above the scene, and nothing in the scene is allowed
+          to move it — the network reacts, the form stays put. */}
+      <div ref={panelRef} className="relative z-10 w-full max-w-[400px]">
+        <div className="rounded-xl border border-border bg-card px-7 py-8 shadow-[0_1px_2px_rgba(0,0,0,0.04)] sm:px-8">
           {setup === null ? (
-            <div className="flex h-40 items-center justify-center">
+            <div className="flex h-56 items-center justify-center">
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               <span className="sr-only">Loading</span>
             </div>
           ) : (
-            <div ref={panelRef}>
-              <header data-field>
-                <h2 className="text-[1.375rem] font-semibold tracking-[-0.02em] text-foreground">
+            <div ref={contentRef}>
+              <div data-field className="flex items-center gap-2.5">
+                <span className="h-5 w-[3px] rounded-full bg-primary" />
+                <span className="text-sm font-semibold tracking-tight text-foreground">Dialo</span>
+              </div>
+
+              <header data-field className="mt-6">
+                <h1 className="text-[1.375rem] font-semibold tracking-[-0.02em] text-foreground">
                   {heading}
-                </h2>
+                </h1>
                 <p className="mt-1.5 text-sm text-muted-foreground">{subheading}</p>
               </header>
 
-              {/* Status. Announced, because a failure that is only visible is a
-                  failure a screen-reader user cannot explain. */}
               {expired && !error && !notice && (
                 <Message tone="warning">Your session ended. Sign in again to continue.</Message>
               )}
@@ -406,6 +344,7 @@ export default function LoginPage() {
                       label="Workspace"
                       value={businessName}
                       onChange={setBusinessName}
+                      onType={() => sceneRef.current?.pulse()}
                       placeholder="Your company"
                       error={fieldErrors.businessName}
                       disabled={busy}
@@ -416,6 +355,7 @@ export default function LoginPage() {
                       label="Your name"
                       value={name}
                       onChange={setName}
+                      onType={() => sceneRef.current?.pulse()}
                       placeholder="Optional"
                       disabled={busy}
                       autoComplete="name"
@@ -429,6 +369,9 @@ export default function LoginPage() {
                   type="email"
                   value={email}
                   onChange={setEmail}
+                  onType={() => sceneRef.current?.pulse()}
+                  onFocus={() => sceneRef.current?.focusEmail()}
+                  onBlur={() => sceneRef.current?.releaseFocus()}
                   placeholder="you@company.com"
                   error={fieldErrors.email}
                   disabled={busy}
@@ -441,6 +384,10 @@ export default function LoginPage() {
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={setPassword}
+                  // No pulse while typing a password: the scene must not react
+                  // in any way that tracks what is being entered.
+                  onFocus={() => sceneRef.current?.focusSecure()}
+                  onBlur={() => sceneRef.current?.releaseFocus()}
                   placeholder={
                     mode === "signIn" ? "••••••••" : `At least ${MIN_PASSWORD_LENGTH} characters`
                   }
@@ -467,6 +414,8 @@ export default function LoginPage() {
                     type={showPassword ? "text" : "password"}
                     value={confirmPassword}
                     onChange={setConfirmPassword}
+                    onFocus={() => sceneRef.current?.focusSecure()}
+                    onBlur={() => sceneRef.current?.releaseFocus()}
                     placeholder="Repeat it"
                     error={fieldErrors.confirmPassword}
                     disabled={busy}
@@ -499,8 +448,6 @@ export default function LoginPage() {
                 </div>
               </form>
 
-              {/* Mode switching. Only offered where the server would accept it,
-                  so no control here leads to a guaranteed refusal. */}
               <div data-field className="mt-6 border-t border-border pt-5 text-[13px]">
                 {mode === "signIn" ? (
                   canCreate ? (
@@ -535,7 +482,7 @@ export default function LoginPage() {
             </div>
           )}
         </div>
-      </section>
+      </div>
     </div>
   );
 }
@@ -549,6 +496,9 @@ function Field({
   label,
   value,
   onChange,
+  onType,
+  onFocus,
+  onBlur,
   placeholder,
   type = "text",
   error,
@@ -560,6 +510,9 @@ function Field({
   label: string;
   value: string;
   onChange: (value: string) => void;
+  onType?: () => void;
+  onFocus?: () => void;
+  onBlur?: () => void;
   placeholder?: string;
   type?: string;
   error?: string;
@@ -567,31 +520,24 @@ function Field({
   autoComplete?: string;
   trailing?: React.ReactNode;
 }) {
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-
-  // The focus micro-interaction: a hairline draws in under the field. Cheap,
-  // and it makes the input feel answered rather than merely outlined.
-  const underline = (to: number) => {
-    if (prefersReducedMotion() || !wrapRef.current) return;
-    const line = wrapRef.current.querySelector("[data-underline]");
-    if (line) gsap.to(line, { scaleX: to, duration: MOTION.fast, ease: MOTION.ease });
-  };
-
   return (
     <div data-field>
       <label htmlFor={id} className="block text-[13px] font-medium text-foreground">
         {label}
       </label>
 
-      <div ref={wrapRef} className="relative mt-1.5">
+      <div className="relative mt-1.5">
         <input
           id={id}
           name={id}
           type={type}
           value={value}
-          onChange={(event) => onChange(event.target.value)}
-          onFocus={() => underline(1)}
-          onBlur={() => underline(0)}
+          onChange={(event) => {
+            onChange(event.target.value);
+            onType?.();
+          }}
+          onFocus={onFocus}
+          onBlur={onBlur}
           placeholder={placeholder}
           disabled={disabled}
           autoComplete={autoComplete}
@@ -605,12 +551,6 @@ function Field({
         {trailing && (
           <span className="absolute inset-y-0 right-2 flex items-center">{trailing}</span>
         )}
-
-        <span
-          data-underline
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 -bottom-px h-px origin-left scale-x-0 bg-ring"
-        />
       </div>
 
       {error && (
@@ -661,11 +601,10 @@ function SubmitButton({
 }) {
   const ref = useRef<HTMLButtonElement | null>(null);
 
-  // Hover lifts the button a hair. One property, one easing — enough to feel
-  // responsive without becoming a performance.
+  // One property, one easing. Enough to feel responsive without performing.
   const lift = (to: number) => {
     if (prefersReducedMotion() || !ref.current || busy) return;
-    gsap.to(ref.current, { y: to, duration: MOTION.fast, ease: MOTION.ease });
+    gsap.to(ref.current, { y: to, duration: 0.24, ease: "power2.out" });
   };
 
   return (
