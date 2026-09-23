@@ -11,7 +11,16 @@
 
 import fs from "fs";
 import path from "path";
-import type { AgentConfig, CallingWindow, CallRecord, FollowUp, Lead } from "@/lib/types";
+import type {
+  AgentConfig,
+  CallingWindow,
+  CallRecord,
+  FollowUp,
+  Lead,
+  Session,
+  Tenant,
+  User,
+} from "@/lib/types";
 import { SCHEDULABLE_FOLLOW_UP_STATUSES } from "@/lib/types";
 
 export interface RawEvent {
@@ -57,6 +66,24 @@ export interface DatabaseSchema {
   webhookBaseUrl: string | null;
   /** Rolling record of webhook delivery health, for diagnostics. */
   webhookDelivery: WebhookDeliveryState | null;
+  /**
+   * Businesses using Dialo. Every lead, call and follow-up belongs to one, and
+   * the API scopes each request to the caller's tenant.
+   */
+  tenants: Tenant[];
+  /** Sign-in identities. Passwords are scrypt hashes; plaintext is never held. */
+  users: User[];
+  /** Live sign-ins, keyed by the SHA-256 of the token the client holds. */
+  sessions: Session[];
+  /**
+   * The tenant that owns everything recorded before tenancy existed.
+   *
+   * Leads, calls and follow-ups written by the pre-authentication app carry no
+   * `tenantId`. Rather than rewrite real customer history, those rows are read
+   * as belonging to this tenant — the first one created — and are invisible to
+   * every other tenant.
+   */
+  legacyTenantId: string | null;
 }
 
 /**
@@ -95,6 +122,10 @@ function emptyDb(): DatabaseSchema {
     callingWindow: null,
     webhookBaseUrl: null,
     webhookDelivery: null,
+    tenants: [],
+    users: [],
+    sessions: [],
+    legacyTenantId: null,
   };
 }
 
@@ -128,6 +159,12 @@ function readDb(): DatabaseSchema {
         callingWindow: parsed.callingWindow ?? null,
         webhookBaseUrl: parsed.webhookBaseUrl ?? null,
         webhookDelivery: parsed.webhookDelivery ?? null,
+        // Absent in databases written before authentication existed; an empty
+        // list is the correct reading of "no accounts yet".
+        tenants: Array.isArray(parsed.tenants) ? parsed.tenants : [],
+        users: Array.isArray(parsed.users) ? parsed.users : [],
+        sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
+        legacyTenantId: parsed.legacyTenantId ?? null,
       };
       return globalThis.__dialoDatabaseCache;
     } catch (err) {
@@ -712,4 +749,122 @@ export function recordWebhookDelivery(event: {
 
   db.webhookDelivery = state;
   writeDb(db);
+}
+
+// ------------------------------------------------------------
+// TENANTS, USERS & SESSIONS
+// ------------------------------------------------------------
+//
+// Reads here return stored records including password hashes, because callers
+// are server-side auth code. Nothing in this section may be returned to a
+// client unchanged — routes project a PublicUser instead.
+
+export function getTenants(): Tenant[] {
+  return readDb().tenants;
+}
+
+export function getTenant(id: string): Tenant | undefined {
+  return readDb().tenants.find((t) => t.id === id);
+}
+
+export function saveTenant(tenant: Tenant): Tenant {
+  const db = readDb();
+  const index = db.tenants.findIndex((t) => t.id === tenant.id);
+  if (index >= 0) db.tenants[index] = tenant;
+  else db.tenants.push(tenant);
+  writeDb(db);
+  return tenant;
+}
+
+export function countUsers(): number {
+  return readDb().users.length;
+}
+
+/** Email is the login identifier, so it is matched case-insensitively. */
+export function findUserByEmail(email: string): User | undefined {
+  const needle = email.trim().toLowerCase();
+  return readDb().users.find((u) => u.email.toLowerCase() === needle);
+}
+
+export function getUser(id: string): User | undefined {
+  return readDb().users.find((u) => u.id === id);
+}
+
+export function saveUser(user: User): User {
+  const db = readDb();
+  const index = db.users.findIndex((u) => u.id === user.id);
+  if (index >= 0) db.users[index] = user;
+  else db.users.push(user);
+  writeDb(db);
+  return user;
+}
+
+export function updateUser(id: string, updates: Partial<User>): User | undefined {
+  const db = readDb();
+  const index = db.users.findIndex((u) => u.id === id);
+  if (index < 0) return undefined;
+  db.users[index] = { ...db.users[index], ...updates, id };
+  writeDb(db);
+  return db.users[index];
+}
+
+export function saveSession(session: Session): Session {
+  const db = readDb();
+  db.sessions.push(session);
+  // Expired rows are swept on write rather than by a timer, so the list cannot
+  // grow without bound on a server that is never restarted.
+  const now = Date.now();
+  db.sessions = db.sessions.filter((s) => new Date(s.expiresAt).getTime() > now);
+  writeDb(db);
+  return session;
+}
+
+export function findSessionByTokenHash(tokenHash: string): Session | undefined {
+  return readDb().sessions.find((s) => s.tokenHash === tokenHash);
+}
+
+export function touchSession(id: string, lastSeenAt: string, expiresAt: string): void {
+  const db = readDb();
+  const index = db.sessions.findIndex((s) => s.id === id);
+  if (index < 0) return;
+  db.sessions[index] = { ...db.sessions[index], lastSeenAt, expiresAt };
+  writeDb(db);
+}
+
+export function deleteSession(tokenHash: string): boolean {
+  const db = readDb();
+  const before = db.sessions.length;
+  db.sessions = db.sessions.filter((s) => s.tokenHash !== tokenHash);
+  if (db.sessions.length === before) return false;
+  writeDb(db);
+  return true;
+}
+
+/** Used by "sign out everywhere" and when an account is locked or disabled. */
+export function deleteSessionsForUser(userId: string): number {
+  const db = readDb();
+  const before = db.sessions.length;
+  db.sessions = db.sessions.filter((s) => s.userId !== userId);
+  const removed = before - db.sessions.length;
+  if (removed > 0) writeDb(db);
+  return removed;
+}
+
+/** The tenant that owns pre-tenancy rows; null until the first account exists. */
+export function getLegacyTenantId(): string | null {
+  return readDb().legacyTenantId;
+}
+
+/**
+ * Records which tenant adopts the pre-authentication data.
+ *
+ * Set once, by the bootstrap route. Refusing to overwrite it matters: pointing
+ * it at a second tenant would hand that tenant the first tenant's customers.
+ */
+export function setLegacyTenantId(tenantId: string): boolean {
+  const db = readDb();
+  if (db.legacyTenantId) return false;
+  db.legacyTenantId = tenantId;
+  writeDb(db);
+  return true;
 }

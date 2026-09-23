@@ -1,26 +1,56 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getCallRecord, getCallRecords } from "@/lib/db";
+import { notFound, ownedByTenant, requireAuth, scopeToTenant } from "@/lib/auth/guard";
+import { getCallRecord, getCallRecords, getLegacyTenantId } from "@/lib/db";
+
+/** A page the client can render without holding thousands of rows in memory. */
+const DEFAULT_LIMIT = 50;
+const MAX_LIMIT = 200;
 
 /**
  * GET /api/records
  *
- * All call records, newest first. With `?id=` it returns one record. This is the
- * only source the Results, Dashboard and Analytics screens read from.
+ * Call records for the caller's business, newest first. With `?id=` it returns
+ * one record. This is the only source the Results, Dashboard and Analytics
+ * screens read from.
+ *
+ * Paginated with `?limit=` and `?offset=`: the list grows by one row per call
+ * placed, and a client that loads every row is a client that gets slower every
+ * day. `total` is returned so the caller can page without guessing.
  */
 export async function GET(request: NextRequest) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
   try {
+    const legacy = getLegacyTenantId();
     const id = request.nextUrl.searchParams.get("id");
 
     if (id) {
       const record = getCallRecord(id);
-      if (!record) {
-        return NextResponse.json({ error: "Record not found" }, { status: 404 });
+      // Another tenant's record is reported as missing, not as forbidden: a 403
+      // would confirm that the id exists.
+      if (!record || !ownedByTenant(record, auth.tenantId, legacy)) {
+        return notFound("Record not found.");
       }
       return NextResponse.json({ record });
     }
 
-    return NextResponse.json({ records: getCallRecords() });
+    const all = scopeToTenant(getCallRecords(), auth.tenantId, legacy);
+
+    const params = request.nextUrl.searchParams;
+    const limit = Math.min(
+      Math.max(Number(params.get("limit")) || DEFAULT_LIMIT, 1),
+      MAX_LIMIT
+    );
+    const offset = Math.max(Number(params.get("offset")) || 0, 0);
+
+    return NextResponse.json({
+      records: all.slice(offset, offset + limit),
+      total: all.length,
+      limit,
+      offset,
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("[GET /api/records]", message);

@@ -113,6 +113,11 @@ export interface AICallResult {
 export interface Lead {
   id: string;
   name: string;
+  /**
+   * Owning business. Optional because rows written before tenancy existed have
+   * none; those are read as belonging to the legacy tenant. See lib/auth/guard.
+   */
+  tenantId?: string | null;
   phone: string;
   email?: string;
   company?: string;
@@ -136,6 +141,11 @@ export interface Lead {
 export interface CallRecord {
   id: string;
   leadId: string;
+  /**
+   * Owning business. Optional because rows written before tenancy existed have
+   * none; those are read as belonging to the legacy tenant. See lib/auth/guard.
+   */
+  tenantId?: string | null;
   lead: Lead;
   status: CallStatus;
   /** Set from Sarvam `start_datetime`; null while only the trigger request has been sent. */
@@ -213,6 +223,11 @@ export interface TranscriptTurn {
 export interface FollowUp {
   id: string;
   leadId: string;
+  /**
+   * Owning business. Optional because rows written before tenancy existed have
+   * none; those are read as belonging to the legacy tenant. See lib/auth/guard.
+   */
+  tenantId?: string | null;
   lead: Lead;
   previousResponse: string | null;
   interest: InterestLevel | null;
@@ -385,4 +400,64 @@ export interface AppSettings {
   emailAlerts: boolean;
   smsAlerts: boolean;
   dailySummary: boolean;
+}
+
+// --- Tenancy & Identity ---
+//
+// Every business using Dialo is a tenant. Leads, calls and follow-ups belong to
+// exactly one tenant, and the API scopes every read and write to the tenant of
+// the authenticated caller, so one business can never see another's customers.
+
+export interface Tenant {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
+/**
+ * A person who can sign in.
+ *
+ * `passwordHash` is a scrypt string from lib/auth/passwords. The plaintext is
+ * never stored, never logged, and never returned by any API.
+ */
+export interface User {
+  id: string;
+  tenantId: string;
+  email: string;
+  name: string;
+  passwordHash: string;
+  role: "owner" | "member";
+  createdAt: string;
+  lastLoginAt: string | null;
+  /** Set when repeated failed logins have locked the account until a moment. */
+  lockedUntil: string | null;
+  failedAttempts: number;
+}
+
+/** What the client is allowed to know about the signed-in user. */
+export interface PublicUser {
+  id: string;
+  email: string;
+  name: string;
+  role: "owner" | "member";
+  tenantId: string;
+  tenantName: string;
+}
+
+/**
+ * A live sign-in.
+ *
+ * Only the SHA-256 of the session token is stored, so a stolen database cannot
+ * be replayed as a valid session.
+ */
+export interface Session {
+  id: string;
+  tokenHash: string;
+  userId: string;
+  tenantId: string;
+  createdAt: string;
+  expiresAt: string;
+  lastSeenAt: string;
+  /** Coarse client label for the sessions list; never a full user-agent string. */
+  client: string;
 }

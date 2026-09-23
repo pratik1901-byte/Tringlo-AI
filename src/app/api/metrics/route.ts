@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { getCallRecords, getFollowUps, getLeads } from "@/lib/db";
+import { requireAuth, scopeToTenant } from "@/lib/auth/guard";
+import { getCallRecords, getFollowUps, getLeads, getLegacyTenantId } from "@/lib/db";
 import {
   computeCallMetrics,
   computeDailySeries,
@@ -17,11 +18,17 @@ import {
  * than in each page is what keeps two screens from disagreeing about the same
  * call — and leaves nowhere for a hardcoded number to hide.
  */
-export async function GET() {
+export async function GET(request: Request) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
   try {
-    const records = getCallRecords();
-    const leads = getLeads();
-    const followUps = getFollowUps();
+    // Every figure is computed from this tenant's rows only, so one business
+    // can never see another reflected in its own totals.
+    const legacy = getLegacyTenantId();
+    const records = scopeToTenant(getCallRecords(), auth.tenantId, legacy);
+    const leads = scopeToTenant(getLeads(), auth.tenantId, legacy);
+    const followUps = scopeToTenant(getFollowUps(), auth.tenantId, legacy);
 
     const metrics = computeCallMetrics(records, leads, followUps);
 
