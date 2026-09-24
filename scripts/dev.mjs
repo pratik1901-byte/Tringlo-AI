@@ -20,6 +20,7 @@
 //   npm run dev -- --no-tunnel   app only
 // ============================================================
 
+import os from "node:os";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import process from "node:process";
@@ -55,6 +56,16 @@ const CLOUDFLARED_CANDIDATES = [
 const log = (message) => console.log(`\x1b[36m[dialo]\x1b[0m ${message}`);
 const warn = (message) => console.log(`\x1b[33m[dialo]\x1b[0m ${message}`);
 const fail = (message) => console.log(`\x1b[31m[dialo]\x1b[0m ${message}`);
+
+/** This machine's private IPv4 addresses — the same list next.config.ts allows. */
+function lanAddresses() {
+  const privateRange = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/;
+  return Object.values(os.networkInterfaces())
+    .flat()
+    .filter((entry) => entry && entry.family === "IPv4" && !entry.internal)
+    .map((entry) => entry.address)
+    .filter((address) => privateRange.test(address));
+}
 
 let tunnelProcess = null;
 let tunnelUrl = null;
@@ -288,6 +299,11 @@ process.on("SIGTERM", () => shutdown(0));
     return;
   }
   log("App is up.");
+  // The address to type on a phone on the same Wi-Fi. Printed rather than
+  // remembered, because the router can hand this machine a new one.
+  for (const address of lanAddresses()) {
+    log(`On your phone (same Wi-Fi): http://${address}:${PORT}`);
+  }
 
   if (!USE_TUNNEL) {
     warn("Running without a tunnel (--no-tunnel). Calls will be refused.");

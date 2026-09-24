@@ -27,6 +27,7 @@ import {
 } from "@/lib/db";
 import { effectiveWebhookBaseUrl, placeCall } from "@/lib/calls/place-call";
 import { repairStaleLeadStatuses } from "@/lib/calls/lead-status";
+import { runDailySummaries } from "@/lib/notifications";
 import { isWorthReconciling, reconcileCallWithProvider } from "@/lib/calls/reconcile";
 import { getCallRecords } from "@/lib/db";
 import { instantToZonedParts, isValidTimeZone, zonedTimeToInstant } from "./time";
@@ -405,6 +406,10 @@ export async function runSchedulerTick(now = Date.now()): Promise<TickReport> {
 
   // Backstop: any lead still shown as calling whose latest call has settled.
   repairStaleLeadStatuses();
+
+  // Once a day per workspace, after 7pm in the calling timezone. Records the
+  // date before sending, so an overlapping tick cannot send it twice.
+  await runDailySummaries(now);
 
   const due = getDueFollowUps(now, LOCK_TIMEOUT_MS);
 

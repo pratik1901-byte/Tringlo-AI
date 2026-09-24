@@ -15,6 +15,7 @@ import { NextResponse } from "next/server";
 
 import { isLocalRequest } from "@/lib/auth/local-request";
 import { countUsers } from "@/lib/db";
+import { isMailConfigured } from "@/lib/mail/mailer";
 
 export async function GET(request: Request) {
   const needsSetup = countUsers() === 0;
@@ -28,6 +29,9 @@ export async function GET(request: Request) {
       // further workspaces can still be added from the machine.
       canSetupHere: isLocalRequest(request),
       localRequest: isLocalRequest(request),
+      // Whether "Forgot password" can email a code. Unlike workspace creation
+      // it works from any network, because owning the inbox is the proof.
+      resetByEmail: isMailConfigured(),
     },
     { headers: { "Cache-Control": "no-store" } }
   );

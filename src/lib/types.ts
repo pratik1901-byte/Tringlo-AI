@@ -209,6 +209,8 @@ export interface CallRecord {
   inputVariables?: Record<string, unknown> | null;
   /** `final_agent_variables` / `output_agent_variables` exactly as received. */
   outputVariables?: Record<string, unknown> | null;
+  /** When the interested-lead email went out, so a redelivered webhook cannot send it twice. */
+  interestAlertSentAt?: string | null;
 }
 
 // --- Transcript ---

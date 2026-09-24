@@ -17,9 +17,12 @@
 // form state and the real network calls, and asks the scene for behaviour by
 // name. Keeping the split means the animation can be tuned in one place.
 //
-// What is deliberately absent: provider buttons (Dialo has no OAuth), and a
-// "check your inbox" reset (no email service — recovery is real and happens
-// from the server machine).
+// Password reset is by emailed code when the server has email configured:
+// request a six-digit code, then enter it with a new password. Without email
+// it falls back to the reset that only works from the machine running Dialo,
+// so the ability to recover an account never disappears.
+//
+// What is deliberately absent: provider buttons, because Dialo has no OAuth.
 // ============================================================
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -37,6 +40,8 @@ type Mode = "signIn" | "signUp" | "reset";
 interface SetupStatus {
   needsSetup: boolean;
   canSetupHere: boolean;
+  /** True when the server can email a reset code. */
+  resetByEmail?: boolean;
 }
 
 const MIN_PASSWORD_LENGTH = 10;
@@ -57,12 +62,20 @@ export default function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [remember, setRemember] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
+  // Email reset is two steps: ask for a code, then use it.
+  const [resetStep, setResetStep] = useState<"request" | "verify">("request");
+  const [code, setCode] = useState("");
 
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [density, setDensity] = useState<"full" | "reduced">("full");
+
+  /** Reset by emailed code, rather than the machine-only fallback. */
+  const emailReset = setup?.resetByEmail === true;
+  /** The first email-reset step asks only for the address. */
+  const askingForCode = mode === "reset" && emailReset && resetStep === "request";
 
   const stageRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -151,6 +164,8 @@ export default function LoginPage() {
     setFieldErrors({});
     setPassword("");
     setConfirmPassword("");
+    setResetStep("request");
+    setCode("");
   };
 
   const validate = (): boolean => {
@@ -160,7 +175,13 @@ export default function LoginPage() {
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()))
       errors.email = "That does not look like an email address.";
 
-    if (!password) errors.password = "Enter your password.";
+    if (mode === "reset" && emailReset && resetStep === "verify" && !/^\d{6}$/.test(code.replace(/\s/g, ""))) {
+      errors.code = "Enter the six-digit code from the email.";
+    }
+
+    if (askingForCode) {
+      // nothing else to check yet
+    } else if (!password) errors.password = "Enter your password.";
     else if (mode !== "signIn" && password.length < MIN_PASSWORD_LENGTH)
       errors.password = `Use at least ${MIN_PASSWORD_LENGTH} characters.`;
 
@@ -168,7 +189,7 @@ export default function LoginPage() {
       errors.businessName = "Name your workspace.";
     }
 
-    if (mode !== "signIn" && confirmPassword !== password) {
+    if (mode !== "signIn" && !askingForCode && confirmPassword !== password) {
       errors.confirmPassword = "The passwords do not match.";
     }
 
@@ -190,6 +211,37 @@ export default function LoginPage() {
   const reject = (message: string) => {
     setError(message);
     sceneRef.current?.failure(panelRef.current);
+  };
+
+  /** Asks the server to email a code. Returns whether it was accepted. */
+  const requestCode = async (): Promise<boolean> => {
+    const response = await fetch("/api/auth/password-reset/request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      reject(body?.error?.message ?? "Could not send a code.");
+      return false;
+    }
+    // The server's wording is deliberately the same whether or not the
+    // account exists, so it is shown as given.
+    setNotice(body?.message ?? "Check your email for a code.");
+    return true;
+  };
+
+  const resendCode = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await requestCode();
+    } catch {
+      reject("Could not reach the server. Check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   // ---------------------------------------------------------------- submit
@@ -242,15 +294,33 @@ export default function LoginPage() {
         return;
       }
 
-      const response = await fetch("/api/auth/reset-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
+      if (emailReset && resetStep === "request") {
+        const sent = await requestCode();
+        if (sent) setResetStep("verify");
+        return;
+      }
+
+      const response = emailReset
+        ? await fetch("/api/auth/password-reset/confirm", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, code, password }),
+          })
+        : // No email on this server: the machine-only reset.
+          await fetch("/api/auth/reset-password", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password }),
+          });
       const body = await response.json().catch(() => ({}));
 
       if (!response.ok) {
         reject(body?.error?.message ?? "Could not reset the password.");
+        // An exhausted or expired code cannot be retried; go back for a new one.
+        if (body?.error?.code === "code_exhausted") {
+          setResetStep("request");
+          setCode("");
+        }
         return;
       }
 
@@ -258,6 +328,8 @@ export default function LoginPage() {
       setMode("signIn");
       setPassword("");
       setConfirmPassword("");
+      setResetStep("request");
+      setCode("");
     } catch {
       reject("Could not reach the server. Check your connection and try again.");
     } finally {
@@ -288,7 +360,13 @@ export default function LoginPage() {
         : "Sign in to your workspace.";
 
   const submitLabel =
-    mode === "signUp" ? "Create workspace" : mode === "reset" ? "Update password" : "Sign in";
+    mode === "signUp"
+      ? "Create workspace"
+      : mode === "reset"
+        ? askingForCode
+          ? "Send code"
+          : "Update password"
+        : "Sign in";
 
   return (
     <div
@@ -374,10 +452,25 @@ export default function LoginPage() {
                   onBlur={() => sceneRef.current?.releaseFocus()}
                   placeholder="you@company.com"
                   error={fieldErrors.email}
-                  disabled={busy}
+                  disabled={busy || (mode === "reset" && emailReset && resetStep === "verify")}
                   autoComplete="username"
                 />
 
+                {mode === "reset" && emailReset && resetStep === "verify" && (
+                  <Field
+                    id="code"
+                    label="Code from the email"
+                    value={code}
+                    onChange={setCode}
+                    placeholder="123 456"
+                    error={fieldErrors.code}
+                    disabled={busy}
+                    autoComplete="one-time-code"
+                    inputMode="numeric"
+                  />
+                )}
+
+                {!askingForCode && (
                 <Field
                   id="password"
                   label={mode === "reset" ? "New password" : "Password"}
@@ -406,8 +499,9 @@ export default function LoginPage() {
                     </button>
                   }
                 />
+                )}
 
-                {mode !== "signIn" && (
+                {mode !== "signIn" && !askingForCode && (
                   <Field
                     id="confirmPassword"
                     label="Confirm password"
@@ -429,7 +523,7 @@ export default function LoginPage() {
                       Stay signed in
                     </Checkbox>
 
-                    {canCreate && (
+                    {(canCreate || emailReset) && (
                       <button
                         type="button"
                         onClick={() => switchMode("reset")}
@@ -457,7 +551,7 @@ export default function LoginPage() {
                     </p>
                   ) : (
                     <p className="leading-relaxed text-muted-foreground">
-                      Workspaces and password resets are handled from the machine running Dialo.
+                      New workspaces are created from the machine running Dialo.
                     </p>
                   )
                 ) : (
@@ -471,10 +565,24 @@ export default function LoginPage() {
                   </p>
                 )}
 
-                {mode === "reset" && (
+                {mode === "reset" && emailReset && (
                   <p className="mt-3 leading-relaxed text-muted-foreground">
-                    Dialo does not send email, so there is no reset link. A password can be changed
-                    from this machine, and doing so signs out every existing session for that
+                    {resetStep === "request"
+                      ? "We'll email a six-digit code to the address on your account. It expires in 10 minutes."
+                      : "Changing your password signs out every other session on this account."}
+                    {resetStep === "verify" && (
+                      <>
+                        {" "}
+                        <SwitchLink onClick={resendCode}>Send a new code</SwitchLink>
+                      </>
+                    )}
+                  </p>
+                )}
+
+                {mode === "reset" && !emailReset && (
+                  <p className="mt-3 leading-relaxed text-muted-foreground">
+                    Email is not set up on this server, so a password can only be changed from the
+                    machine running Dialo. Doing so signs out every existing session for that
                     account.
                   </p>
                 )}
@@ -504,6 +612,7 @@ function Field({
   error,
   disabled,
   autoComplete,
+  inputMode,
   trailing,
 }: {
   id: string;
@@ -518,6 +627,8 @@ function Field({
   error?: string;
   disabled?: boolean;
   autoComplete?: string;
+  /** "numeric" brings up the number pad on phones, for the reset code. */
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
   trailing?: React.ReactNode;
 }) {
   return (
@@ -541,6 +652,7 @@ function Field({
           placeholder={placeholder}
           disabled={disabled}
           autoComplete={autoComplete}
+          inputMode={inputMode}
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? `${id}-error` : undefined}
           className={`block h-11 w-full rounded-md border bg-card px-3 text-sm text-foreground transition-colors placeholder:text-muted-foreground/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-60 ${

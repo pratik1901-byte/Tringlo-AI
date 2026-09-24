@@ -26,6 +26,7 @@ import { deriveAiStatus, parseSarvamWebhook } from "@/lib/providers/sarvam/webho
 import { prefetchRecordingLater } from "@/lib/recordings";
 import { recordCallInMemory } from "@/lib/memory/service";
 import { syncLeadStatus } from "@/lib/calls/lead-status";
+import { notifyIfInterested } from "@/lib/notifications";
 import type { SarvamWebhookPayload } from "@/lib/providers/sarvam/types";
 import type { AICallResult, CallRecord, CallStatus, FollowUp, Lead } from "@/lib/types";
 import { isTerminalCallStatus } from "@/lib/types";
@@ -274,6 +275,11 @@ export function applySarvamEvent(rawPayload: SarvamWebhookPayload): ApplyResult 
   // external: memory is valuable but it is not worth failing a webhook over.
   // A redelivered webhook is harmless here — repeated facts confirm rather
   // than duplicate, and the summary is keyed by call id.
+  // Not awaited: Sarvam is waiting on this response, and an email must never
+  // delay or fail a webhook. It stamps the call itself, so a redelivery does
+  // not send it twice.
+  void notifyIfInterested(savedRecord);
+
   try {
     recordCallInMemory(savedRecord);
   } catch (error) {

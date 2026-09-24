@@ -22,6 +22,34 @@ import type {
   User,
 } from "@/lib/types";
 import type { CustomerProfile, MemoryItem } from "@/lib/memory/types";
+
+/**
+ * A pending password reset. Only a salted HMAC of the code is stored, so the
+ * database never holds a code that could be replayed.
+ */
+export interface PasswordReset {
+  id: string;
+  userId: string;
+  codeHash: string;
+  salt: string;
+  createdAt: string;
+  expiresAt: string;
+  attempts: number;
+  /** Set when used or superseded; a closed reset can never succeed. */
+  closedAt: string | null;
+}
+
+/** What a workspace wants to be emailed about. Held server-side so the server can act on it. */
+export interface NotificationSettings {
+  tenantId: string;
+  /** Where alerts go. Null falls back to the workspace owner's login email. */
+  recipient: string | null;
+  emailAlerts: boolean;
+  dailySummary: boolean;
+  /** The local date (YYYY-MM-DD) the last daily summary covered, so it is sent once. */
+  lastSummaryDate: string | null;
+  updatedAt: string;
+}
 import { SCHEDULABLE_FOLLOW_UP_STATUSES } from "@/lib/types";
 
 export interface RawEvent {
@@ -94,6 +122,8 @@ export interface DatabaseSchema {
    */
   customerProfiles: CustomerProfile[];
   memoryItems: MemoryItem[];
+  passwordResets: PasswordReset[];
+  notificationSettings: NotificationSettings[];
 }
 
 /**
@@ -138,6 +168,8 @@ function emptyDb(): DatabaseSchema {
     legacyTenantId: null,
     customerProfiles: [],
     memoryItems: [],
+    passwordResets: [],
+    notificationSettings: [],
   };
 }
 
@@ -179,6 +211,10 @@ function readDb(): DatabaseSchema {
         legacyTenantId: parsed.legacyTenantId ?? null,
         customerProfiles: Array.isArray(parsed.customerProfiles) ? parsed.customerProfiles : [],
         memoryItems: Array.isArray(parsed.memoryItems) ? parsed.memoryItems : [],
+        passwordResets: Array.isArray(parsed.passwordResets) ? parsed.passwordResets : [],
+        notificationSettings: Array.isArray(parsed.notificationSettings)
+          ? parsed.notificationSettings
+          : [],
       };
       return globalThis.__dialoDatabaseCache;
     } catch (err) {
@@ -989,4 +1025,85 @@ export function forgetCustomerMemory(
 
   if (affected > 0 || options.hard) writeDb(db);
   return affected;
+}
+
+
+// ------------------------------------------------------------
+// PASSWORD RESETS
+// ------------------------------------------------------------
+
+/** Opens a reset, closing any earlier ones for the same user: only the newest code works. */
+export function openPasswordReset(reset: PasswordReset): void {
+  const db = readDb();
+  const now = new Date().toISOString();
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  for (const existing of db.passwordResets) {
+    if (existing.userId === reset.userId && !existing.closedAt) existing.closedAt = now;
+  }
+  // Old rows are swept on write so the list cannot grow without bound.
+  db.passwordResets = db.passwordResets.filter(
+    (existing) => new Date(existing.createdAt).getTime() > cutoff
+  );
+  db.passwordResets.push(reset);
+  writeDb(db);
+}
+
+export function getOpenPasswordReset(userId: string): PasswordReset | undefined {
+  return readDb()
+    .passwordResets.filter((reset) => reset.userId === userId && !reset.closedAt)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+}
+
+export function updatePasswordReset(id: string, updates: Partial<PasswordReset>): void {
+  const db = readDb();
+  const reset = db.passwordResets.find((candidate) => candidate.id === id);
+  if (!reset) return;
+  Object.assign(reset, updates);
+  writeDb(db);
+}
+
+// ------------------------------------------------------------
+// NOTIFICATION SETTINGS
+// ------------------------------------------------------------
+
+export function getNotificationSettings(tenantId: string): NotificationSettings {
+  return (
+    readDb().notificationSettings.find((settings) => settings.tenantId === tenantId) ?? {
+      tenantId,
+      recipient: null,
+      // Off until someone turns them on: an email nobody asked for is spam.
+      emailAlerts: false,
+      dailySummary: false,
+      lastSummaryDate: null,
+      updatedAt: new Date(0).toISOString(),
+    }
+  );
+}
+
+export function getAllNotificationSettings(): NotificationSettings[] {
+  return readDb().notificationSettings;
+}
+
+export function saveNotificationSettings(
+  tenantId: string,
+  updates: Partial<Omit<NotificationSettings, "tenantId">>
+): NotificationSettings {
+  const db = readDb();
+  const current = getNotificationSettings(tenantId);
+  const next: NotificationSettings = {
+    ...current,
+    ...updates,
+    tenantId,
+    updatedAt: new Date().toISOString(),
+  };
+  const index = db.notificationSettings.findIndex((settings) => settings.tenantId === tenantId);
+  if (index >= 0) db.notificationSettings[index] = next;
+  else db.notificationSettings.push(next);
+  writeDb(db);
+  return next;
+}
+
+/** Every account in one workspace. */
+export function getUsersForTenant(tenantId: string): User[] {
+  return readDb().users.filter((user) => user.tenantId === tenantId);
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { NotificationsCard } from "@/components/settings/notifications-card";
 import { Check, RefreshCw } from "lucide-react";
 
 import { useSettingsStore } from "@/lib/store";
@@ -224,80 +225,8 @@ export default function SettingsPage() {
                 </div>
             </div>
 
-            {/* 3. Notifications Card */}
-            <div className="rounded-xl border bg-card p-6 shadow-sm space-y-4">
-                <h2 className="text-sm font-semibold">Notifications</h2>
-                <div className="space-y-4">
-                    {/* Email alerts */}
-                    <div className="flex items-center justify-between">
-                        <span className="text-sm text-foreground">Email alerts for interested leads</span>
-                        <button
-                            type="button"
-                            role="switch"
-                            aria-checked={settings.emailAlerts}
-                            onClick={() => {
-                                updateSettings({ emailAlerts: !settings.emailAlerts });
-                                triggerSavedNotice();
-                            }}
-                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                settings.emailAlerts ? "bg-primary" : "bg-muted"
-                            }`}
-                        >
-                            <span
-                                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
-                                    settings.emailAlerts ? "translate-x-5" : "translate-x-0"
-                                }`}
-                            />
-                        </button>
-                    </div>
-
-                    {/* SMS alerts */}
-                    <div className="flex items-center justify-between">
-                        <span className="text-sm text-foreground">SMS alerts for interested leads</span>
-                        <button
-                            type="button"
-                            role="switch"
-                            aria-checked={settings.smsAlerts}
-                            onClick={() => {
-                                updateSettings({ smsAlerts: !settings.smsAlerts });
-                                triggerSavedNotice();
-                            }}
-                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                settings.smsAlerts ? "bg-primary" : "bg-muted"
-                            }`}
-                        >
-                            <span
-                                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
-                                    settings.smsAlerts ? "translate-x-5" : "translate-x-0"
-                                }`}
-                            />
-                        </button>
-                    </div>
-
-                    {/* Daily summary */}
-                    <div className="flex items-center justify-between">
-                        <span className="text-sm text-foreground">Daily summary report via email</span>
-                        <button
-                            type="button"
-                            role="switch"
-                            aria-checked={settings.dailySummary}
-                            onClick={() => {
-                                updateSettings({ dailySummary: !settings.dailySummary });
-                                triggerSavedNotice();
-                            }}
-                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                settings.dailySummary ? "bg-primary" : "bg-muted"
-                            }`}
-                        >
-                            <span
-                                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
-                                    settings.dailySummary ? "translate-x-5" : "translate-x-0"
-                                }`}
-                            />
-                        </button>
-                    </div>
-                </div>
-            </div>
+            {/* 3. Notifications — server-backed, so the server can act on them. */}
+            <NotificationsCard />
 
             {/* 5. Sarvam Voice Agents & Telephony Diagnostic Card */}
             <SarvamDiagnosticCard />
