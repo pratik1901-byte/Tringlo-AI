@@ -25,6 +25,18 @@ function lanAddresses(): string[] {
 const nextConfig: NextConfig = {
   allowedDevOrigins: lanAddresses(),
 
+  logging: {
+    // Sarvam's callbacks carry the webhook token in the URL (?k=…), because its
+    // callback config accepts no signing secret or custom header. Next's dev
+    // request log prints full URLs, so without this every call result would
+    // write the secret to the terminal. The app's own webhook logs — attempt
+    // id, outcome, timing — are unaffected, and production builds do not log
+    // requests at all.
+    incomingRequests: {
+      ignore: [/\/api\/webhooks\//],
+    },
+  },
+
   async rewrites() {
     return {
       // Runs only after Next has failed to match a page, an API route and a
