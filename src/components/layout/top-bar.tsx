@@ -36,19 +36,31 @@ export function TopBar() {
   };
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b bg-card px-6">
-      <h1 className="text-sm font-medium text-foreground">
+    // Phone: tighter gutters, and the page title set a touch larger since it is
+    // the only heading on a screen with no sidebar to say where you are.
+    //
+    // The height grows by the top safe-area inset rather than having it carved
+    // out of 3.5rem: under border-box a plain min-height would include the
+    // padding, and on a notched phone the header's content would be squeezed
+    // into a few pixels.
+    <header className="flex h-14 shrink-0 items-center justify-between border-b bg-card px-6 phone:px-4 phone:pt-safe phone:h-[calc(3.5rem+env(safe-area-inset-top))]">
+      <h1 className="text-sm font-medium text-foreground phone:text-base phone:font-semibold">
         {PAGE_TITLES[pathname] ?? "Dialo AI"}
       </h1>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 phone:gap-2">
         <ProviderIndicator />
-        <LiveClock />
+        {/* The phone already shows the time in its own status bar, and the
+            width is better spent on the title. `contents` keeps the desktop
+            layout exactly as it was. */}
+        <div className="contents phone:hidden">
+          <LiveClock />
+        </div>
         <button
           onClick={toggleTheme}
           title={isDark ? "Switch to light mode" : "Switch to dark mode"}
           aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
-          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground phone:h-11 phone:w-11 phone:-mr-2.5"
         >
           {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </button>

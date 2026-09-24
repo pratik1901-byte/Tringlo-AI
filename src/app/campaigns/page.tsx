@@ -290,12 +290,12 @@ function CreateCampaignDialog({
   return (
     <div
       ref={backdropRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/25 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/25 p-4 phone:items-end phone:p-0"
       role="dialog"
       aria-modal="true"
       aria-label="New campaign"
     >
-      <div ref={panelRef} className="w-full max-w-md rounded-xl border bg-card shadow-xl">
+      <div ref={panelRef} className="w-full max-w-md rounded-xl border bg-card shadow-xl phone:max-h-[92dvh] phone:max-w-none phone:overflow-y-auto phone:rounded-b-none phone:rounded-t-2xl phone:border-x-0 phone:border-b-0 phone:pb-safe">
         <header className="flex items-center justify-between border-b px-6 py-4">
           <h2 className="font-heading text-base font-semibold tracking-tight">New campaign</h2>
           <button

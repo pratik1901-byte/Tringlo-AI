@@ -189,7 +189,7 @@ export default function UploadPage() {
                 {method === "enter" ? (
                     <div className="p-5 space-y-4">
                         {/* Column headers */}
-                        <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-1">
+                        <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-1 phone:hidden">
                             <span>Name</span>
                             <span>Phone Number</span>
                             <span className="text-center">Schedule</span>
@@ -199,38 +199,42 @@ export default function UploadPage() {
                         {/* Rows */}
                         {rows.map((row) => (
                             <div key={row.id} className="space-y-2">
-                                <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-3 items-center">
+                                <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-3 items-center phone:grid-cols-[1fr_auto]! phone:gap-2 phone:rounded-lg phone:border phone:p-3">
                                     <input
                                         type="text"
                                         placeholder="Name (e.g. Rahul, Priya...)"
+                                        aria-label="Name"
                                         value={row.name}
                                         onChange={e => updateRow(row.id, "name", e.target.value)}
-                                        className="h-10 rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                        className="h-10 rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring phone:col-span-2 phone:h-11"
                                     />
                                     <input
                                         type="text"
                                         placeholder="+91 98765 43210"
+                                        aria-label="Phone number"
+                                        inputMode="tel"
                                         value={row.phone}
                                         onChange={e => updateRow(row.id, "phone", e.target.value)}
-                                        className="h-10 rounded-lg border border-input bg-background px-3 text-sm font-mono placeholder:text-muted-foreground/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                        className="h-10 rounded-lg border border-input bg-background px-3 text-sm font-mono placeholder:text-muted-foreground/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring phone:h-11 phone:min-w-0"
                                     />
-                                    <div className="flex items-center gap-1 rounded-lg border border-input bg-background p-0.5">
+                                    <div className="flex items-center gap-1 rounded-lg border border-input bg-background p-0.5 phone:order-last phone:col-span-2">
                                         <button
                                             onClick={() => updateRow(row.id, "mode", "now")}
-                                            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${row.mode === "now" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                                            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors phone:h-9 phone:flex-1 ${row.mode === "now" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
                                         >
                                             Call Now
                                         </button>
                                         <button
                                             onClick={() => updateRow(row.id, "mode", "schedule")}
-                                            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${row.mode === "schedule" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                                            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors phone:h-9 phone:flex-1 ${row.mode === "schedule" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
                                         >
                                             Schedule
                                         </button>
                                     </div>
                                     <button
                                         onClick={() => removeRow(row.id)}
-                                        className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                                        aria-label="Remove this number"
+                                        className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors phone:h-11 phone:w-11 phone:border"
                                         disabled={rows.length <= 1}
                                     >
                                         <X className="h-3.5 w-3.5" />
@@ -239,19 +243,19 @@ export default function UploadPage() {
 
                                 {/* Schedule date/time picker (inline beneath row) */}
                                 {row.mode === "schedule" && (
-                                    <div className="flex items-center gap-3 pl-1">
-                                        <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
+                                    <div className="flex items-center gap-3 pl-1 phone:gap-2 phone:pl-0">
+                                        <Calendar className="h-4 w-4 text-muted-foreground shrink-0 phone:hidden" />
                                         <input
                                             type="date"
                                             value={row.date}
                                             onChange={e => updateRow(row.id, "date", e.target.value)}
-                                            className="h-9 rounded-lg border border-input bg-background px-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                            className="h-9 rounded-lg border border-input bg-background px-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring phone:h-11 phone:min-w-0 phone:flex-1"
                                         />
                                         <input
                                             type="time"
                                             value={row.time}
                                             onChange={e => updateRow(row.id, "time", e.target.value)}
-                                            className="h-9 rounded-lg border border-input bg-background px-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                            className="h-9 rounded-lg border border-input bg-background px-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring phone:h-11 phone:min-w-0 phone:flex-1"
                                         />
                                     </div>
                                 )}
@@ -321,8 +325,8 @@ export default function UploadPage() {
 
                         {result && (
                             <div className="space-y-5">
-                                <div className="grid gap-4 grid-cols-3">
-                                    <div className="rounded-lg border bg-background p-4 flex items-center gap-3">
+                                <div className="grid gap-4 grid-cols-3 phone:gap-2">
+                                    <div className="rounded-lg border bg-background p-4 flex items-center gap-3 phone:flex-col phone:items-start phone:gap-2 phone:p-3">
                                         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30">
                                             <FileType className="h-5 w-5 text-blue-600" />
                                         </div>
@@ -331,7 +335,7 @@ export default function UploadPage() {
                                             <p className="text-xl font-bold">{result.totalRows}</p>
                                         </div>
                                     </div>
-                                    <div className="rounded-lg border bg-background p-4 flex items-center gap-3">
+                                    <div className="rounded-lg border bg-background p-4 flex items-center gap-3 phone:flex-col phone:items-start phone:gap-2 phone:p-3">
                                         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
                                             <CheckCircle2 className="h-5 w-5 text-emerald-600" />
                                         </div>
@@ -340,7 +344,7 @@ export default function UploadPage() {
                                             <p className="text-xl font-bold">{result.valid.length}</p>
                                         </div>
                                     </div>
-                                    <div className="rounded-lg border bg-background p-4 flex items-center gap-3">
+                                    <div className="rounded-lg border bg-background p-4 flex items-center gap-3 phone:flex-col phone:items-start phone:gap-2 phone:p-3">
                                         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
                                             <AlertCircle className="h-5 w-5 text-red-600" />
                                         </div>

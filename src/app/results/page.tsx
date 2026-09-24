@@ -155,13 +155,16 @@ export default function ResultsPage() {
 
       {/* Filters */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <nav className="flex flex-wrap items-center gap-1" aria-label="Filter results">
+        <nav
+          className="flex flex-wrap items-center gap-1 phone:-mx-4 phone:flex-nowrap phone:overflow-x-auto phone:px-4 phone:pb-1 phone:[scrollbar-width:none]"
+          aria-label="Filter results"
+        >
           {TABS.map((item) => (
             <button
               key={item.id}
               onClick={() => setTab(item.id)}
               aria-current={tab === item.id}
-              className={`rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors ${
+              className={`rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors phone:h-10 phone:shrink-0 phone:whitespace-nowrap phone:px-3 ${
                 tab === item.id
                   ? "bg-accent text-accent-foreground"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -172,15 +175,15 @@ export default function ResultsPage() {
           ))}
         </nav>
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center phone:flex-col! phone:items-stretch!">
           <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground phone:top-3.5" />
             <input
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search name, phone or summary"
-              className="h-9 w-full rounded-md border bg-card pl-9 pr-3 text-sm outline-none placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-ring sm:w-64"
+              className="h-9 w-full rounded-md border bg-card pl-9 pr-3 text-sm outline-none placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-ring sm:w-64 phone:h-11 phone:w-full!"
             />
           </div>
           <div className="flex items-center gap-1.5">
@@ -189,7 +192,7 @@ export default function ResultsPage() {
               value={startDate}
               onChange={(event) => setStartDate(event.target.value)}
               aria-label="From date"
-              className="h-9 rounded-md border bg-card px-2.5 text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="h-9 rounded-md border bg-card px-2.5 text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring phone:h-11 phone:min-w-0 phone:flex-1"
             />
             <span className="text-xs text-muted-foreground">to</span>
             <input
@@ -197,7 +200,7 @@ export default function ResultsPage() {
               value={endDate}
               onChange={(event) => setEndDate(event.target.value)}
               aria-label="To date"
-              className="h-9 rounded-md border bg-card px-2.5 text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="h-9 rounded-md border bg-card px-2.5 text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring phone:h-11 phone:min-w-0 phone:flex-1"
             />
           </div>
         </div>
@@ -211,7 +214,63 @@ export default function ResultsPage() {
           description="Call a lead from the Leads page. The result appears here the moment Sarvam reports the outcome."
         />
       ) : (
-        <div className="overflow-hidden rounded-lg border bg-card">
+        <>
+        {/* Phone: nine columns cannot share 375px. Each call is one card, and
+            the whole card opens the same detail view the desktop "View" does
+            — a larger target than a small link, and the obvious thing to tap. */}
+        <div className="hidden phone:block">
+          {isLoading ? (
+            <ul className="space-y-2" aria-busy="true">
+              {Array.from({ length: 4 }, (_, index) => (
+                <li key={index} className="h-[92px] animate-pulse rounded-lg border bg-card" />
+              ))}
+            </ul>
+          ) : filtered.length === 0 ? (
+            <p className="rounded-lg border bg-card px-4 py-12 text-center text-sm text-muted-foreground">
+              No calls match these filters.
+            </p>
+          ) : (
+            <>
+              <ul className="space-y-2">
+                {filtered.map((record) => (
+                  <li key={record.id}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedId(record.id)}
+                      className="w-full rounded-lg border bg-card px-4 py-3 text-left transition-colors active:bg-muted/60"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium leading-tight">{record.lead.name}</p>
+                          <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+                            {record.lead.phone}
+                          </p>
+                        </div>
+                        <StatusBadge
+                          status={record.status}
+                          requestedAt={record.requestedAt}
+                          now={now}
+                          showPulse
+                        />
+                      </div>
+                      <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        <span>{formatOutcome(record.aiResult?.status)}</span>
+                        <span>Interest {formatInterest(record.interestLevel)}</span>
+                        <span className="font-mono">{formatDuration(record.duration)}</span>
+                        <span className="ml-auto">{formatDate(record.startedAt || record.requestedAt)}</span>
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 text-center text-xs text-muted-foreground">
+                Showing {filtered.length} of {records.length}
+              </p>
+            </>
+          )}
+        </div>
+
+        <div className="overflow-hidden rounded-lg border bg-card phone:hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="border-b bg-muted/40 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -295,6 +354,7 @@ export default function ResultsPage() {
             </div>
           )}
         </div>
+        </>
       )}
 
       {selected && (
@@ -342,14 +402,14 @@ function CallDetailPanel({
   return (
     <div
       ref={backdropRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/25 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/25 p-4 phone:items-end phone:p-0"
       role="dialog"
       aria-modal="true"
       aria-label={`Call details for ${record.lead.name}`}
     >
       <div
         ref={panelRef}
-        className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border bg-card shadow-xl"
+        className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border bg-card shadow-xl phone:max-h-[92dvh] phone:max-w-none phone:rounded-b-none phone:rounded-t-2xl phone:border-x-0 phone:border-b-0 phone:pb-safe"
       >
         <header className="flex items-start justify-between gap-4 border-b px-6 py-4">
           <div className="min-w-0">

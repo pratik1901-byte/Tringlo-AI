@@ -113,14 +113,18 @@ export function MetricCard({
   const display = useCountUp(value, format);
 
   return (
-    <div className="rounded-lg border bg-card p-5">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="mt-3 font-heading text-3xl font-semibold tabular-nums tracking-tight text-foreground">
+    // Phone: two cards share a row, so the padding and the figure come down a
+    // step and the caption is allowed two lines instead of pushing the height.
+    <div className="rounded-lg border bg-card p-5 phone:p-3.5">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground phone:text-[10.5px]">
+        {label}
+      </p>
+      <p className="mt-3 font-heading text-3xl font-semibold tabular-nums tracking-tight text-foreground phone:mt-2 phone:text-2xl">
         {value === null ? EMPTY : display || format(value)}
       </p>
       <p
         className={cn(
-          "mt-1.5 text-xs",
+          "mt-1.5 text-xs phone:line-clamp-2 phone:text-[11px] phone:leading-snug",
           captionTone === "positive" && "text-emerald-600 dark:text-emerald-400",
           captionTone === "negative" && "text-red-600 dark:text-red-400",
           captionTone === "neutral" && "text-muted-foreground"
@@ -267,17 +271,24 @@ export function PageHeader({
   return (
     <div
       ref={ref}
-      className="flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-end sm:justify-between"
+      // Phone: the top bar already names the page, so the heading here steps
+      // down a size and the block tightens; the description and actions stay.
+      className="flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-end sm:justify-between phone:flex-col! phone:items-stretch! phone:gap-3 phone:pb-4"
     >
       <div>
-        <h1 className="font-heading text-2xl font-semibold tracking-tight text-foreground">
+        {/* On a phone the top bar already shows this title, and repeating it
+            costs a tenth of the screen. It is hidden visually there but kept
+            for screen readers, so the page still has its heading. */}
+        <h1 className="font-heading text-2xl font-semibold tracking-tight text-foreground phone:sr-only">
           {title}
         </h1>
         {description && (
-          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+          <p className="mt-1 text-sm text-muted-foreground phone:mt-0">{description}</p>
         )}
       </div>
-      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+      {actions && (
+        <div className="flex shrink-0 items-center gap-2 phone:flex-wrap">{actions}</div>
+      )}
     </div>
   );
 }

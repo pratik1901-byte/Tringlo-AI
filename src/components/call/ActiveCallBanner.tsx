@@ -42,7 +42,7 @@ export function ActiveCallBanner() {
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-amber-200 bg-amber-50 px-6 py-2.5 text-sm dark:border-amber-900/60 dark:bg-amber-950/30">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-amber-200 bg-amber-50 px-6 py-2.5 text-sm dark:border-amber-900/60 dark:bg-amber-950/30 phone:px-4">
         <span className="relative flex h-1.5 w-1.5">
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-500 opacity-60" />
           <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-amber-500" />

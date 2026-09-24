@@ -35,11 +35,36 @@ import {
   StatusBadge,
 } from "@/components/ui/data-display";
 import { CHART_COLORS, chartTooltipStyle } from "@/lib/chart-theme";
+import {
+  ChartReadout,
+  NoTooltip,
+  ScaleBridge,
+  SeriesChips,
+  phoneBarShape,
+  selectionOpacity,
+  useChartSelection,
+  useIsPhone,
+  useSeriesVisibility,
+  type Series,
+} from "@/components/charts/phone-chart";
+
+/** The activity chart's series, named once for the legend chips and the readout. */
+const ACTIVITY_SERIES: Series[] = [
+  { key: "calls", name: "Placed", color: CHART_COLORS.muted },
+  { key: "connected", name: "Answered", color: CHART_COLORS.primary },
+];
 
 export default function DashboardPage() {
   const { data, error, isLoading, refresh } = useMetrics();
   const { records } = useCallRecords();
   const now = useNow(60_000);
+
+  // Phone-only chart interaction. Called before the early returns below, as
+  // hooks must be; on the desktop `isPhone` is false and none of it is used.
+  const isPhone = useIsPhone();
+  const activity = useChartSelection(data?.daily.map((point) => point.label) ?? []);
+  const activitySeries = useSeriesVisibility(ACTIVITY_SERIES);
+  const outcomes = useChartSelection(data?.outcomes.map((slice) => slice.name) ?? []);
 
   const metrics = data?.metrics;
   const kpiRef = useReveal<HTMLDivElement>({ deps: [Boolean(metrics)] });
@@ -82,7 +107,9 @@ export default function DashboardPage() {
       {error && <ErrorState message={error} onRetry={refresh} />}
 
       {/* KPIs. Each caption is derived — where there is no baseline it reads "—". */}
-      <div ref={kpiRef} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {/* Two columns on a phone: six full-width cards would push the charts
+          three screens down. */}
+      <div ref={kpiRef} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 phone:grid-cols-2! phone:gap-3 phone:landscape:grid-cols-3!">
         <MetricCard
           label="Calls today"
           value={metrics.callsToday}
@@ -192,21 +219,46 @@ export default function DashboardPage() {
       ) : (
         <>
           <div ref={chartsRef} className="grid gap-4 lg:grid-cols-5">
-            <section className="rounded-lg border bg-card p-5 lg:col-span-3">
+            <section className="rounded-lg border bg-card p-5 lg:col-span-3 phone:p-4">
               <div className="flex items-baseline justify-between">
                 <div>
                   <h2 className="font-heading text-sm font-semibold tracking-tight">Call activity</h2>
                   <p className="mt-0.5 text-xs text-muted-foreground">Last 7 days</p>
                 </div>
-                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <div className="flex items-center gap-4 text-xs text-muted-foreground phone:hidden">
                   <Legend color={CHART_COLORS.muted} label="Placed" />
                   <Legend color={CHART_COLORS.primary} label="Answered" />
                 </div>
               </div>
 
-              <div className="mt-5 h-56">
+              {isPhone && (
+                <>
+                  <div className="mt-4">
+                    <SeriesChips
+                      series={ACTIVITY_SERIES}
+                      isVisible={activitySeries.isVisible}
+                      onToggle={activitySeries.toggle}
+                    />
+                  </div>
+                  <ChartReadout
+                    label={activity.index === null ? null : (data?.daily[activity.index]?.label ?? null)}
+                    items={ACTIVITY_SERIES.filter((series) => activitySeries.isVisible(series.key)).map(
+                      (series) => ({
+                        name: series.name,
+                        color: series.color,
+                        value: pointValue(data?.daily, activity.index, series.key),
+                      })
+                    )}
+                  />
+                </>
+              )}
+
+              {/* `touch-pan-y` on a phone: a vertical swipe still scrolls the
+                  page, a horizontal one scrubs the chart. */}
+              <div className="mt-5 h-56 phone:mt-3 phone:touch-pan-y" {...(isPhone ? activity.bind : {})}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={data?.daily ?? []} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+                    {isPhone && <ScaleBridge scaleRef={activity.scaleRef} />}
                     <XAxis
                       dataKey="label"
                       tickLine={false}
@@ -219,15 +271,33 @@ export default function DashboardPage() {
                       axisLine={false}
                       tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                     />
-                    <Tooltip {...chartTooltipStyle} cursor={{ fill: "var(--muted)", opacity: 0.4 }} />
-                    <Bar dataKey="calls" name="Placed" fill={CHART_COLORS.muted} radius={[3, 3, 0, 0]} maxBarSize={28} />
-                    <Bar dataKey="connected" name="Answered" fill={CHART_COLORS.primary} radius={[3, 3, 0, 0]} maxBarSize={28} />
+                    <Tooltip
+                      {...chartTooltipStyle}
+                      cursor={isPhone ? false : { fill: "var(--muted)", opacity: 0.4 }}
+                      {...(isPhone ? { content: NoTooltip } : {})}
+                    />
+                    {ACTIVITY_SERIES.map((series) => (
+                      <Bar
+                        key={series.key}
+                        dataKey={series.key}
+                        name={series.name}
+                        fill={series.color}
+                        radius={[3, 3, 0, 0]}
+                        maxBarSize={28}
+                        {...(isPhone
+                          ? {
+                              hide: !activitySeries.isVisible(series.key),
+                              shape: phoneBarShape(activity.index),
+                            }
+                          : {})}
+                      />
+                    ))}
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             </section>
 
-            <section className="rounded-lg border bg-card p-5 lg:col-span-2">
+            <section className="rounded-lg border bg-card p-5 lg:col-span-2 phone:p-4">
               <h2 className="font-heading text-sm font-semibold tracking-tight">Outcomes</h2>
               <p className="mt-0.5 text-xs text-muted-foreground">All completed attempts</p>
 
@@ -237,7 +307,28 @@ export default function DashboardPage() {
                 </p>
               ) : (
                 <>
-                  <div className="mt-4 h-40">
+                  {isPhone && outcomes.index !== null && data?.outcomes[outcomes.index] && (
+                    <ChartReadout
+                      label={data.outcomes[outcomes.index].name}
+                      hint="Tap a slice or a row"
+                      items={[
+                        {
+                          name: "Calls",
+                          color:
+                            CHART_COLORS.categorical[data.outcomes[outcomes.index].outcome] ??
+                            CHART_COLORS.primary,
+                          value: data.outcomes[outcomes.index].value,
+                        },
+                        {
+                          name: "Share",
+                          color: "transparent",
+                          value: shareOf(data.outcomes, outcomes.index),
+                        },
+                      ]}
+                    />
+                  )}
+
+                  <div className="mt-4 h-40 phone:h-48">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
@@ -250,26 +341,54 @@ export default function DashboardPage() {
                           paddingAngle={2}
                           stroke="none"
                           animationDuration={600}
-                          shape={outcomeSector}
+                          shape={isPhone ? phoneOutcomeSector(outcomes.index) : outcomeSector}
+                          {...(isPhone
+                            ? { onClick: (_: unknown, index: number) => outcomes.select(index) }
+                            : {})}
                         />
-                        <Tooltip {...chartTooltipStyle} />
+                        <Tooltip {...chartTooltipStyle} {...(isPhone ? { content: NoTooltip } : {})} />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
 
-                  <ul className="mt-4 space-y-1.5">
-                    {(data?.outcomes ?? []).map((slice) => (
-                      <li key={slice.outcome} className="flex items-center justify-between text-xs">
-                        <span className="flex items-center gap-2 text-muted-foreground">
-                          <span
-                            className="h-2 w-2 rounded-sm"
-                            style={{ background: CHART_COLORS.categorical[slice.outcome] }}
-                          />
-                          {slice.name}
-                        </span>
-                        <span className="font-mono tabular-nums text-foreground">{slice.value}</span>
-                      </li>
-                    ))}
+                  <ul className="mt-4 space-y-1.5 phone:space-y-0.5">
+                    {(data?.outcomes ?? []).map((slice, index) =>
+                      isPhone ? (
+                        <li key={slice.outcome}>
+                          {/* A 40px row on a phone: the slices themselves are
+                              too small to be the only way to select one. */}
+                          <button
+                            type="button"
+                            onClick={() => outcomes.select(index)}
+                            aria-pressed={outcomes.index === index}
+                            className={
+                              "flex h-10 w-full items-center justify-between rounded-md px-2 text-sm transition-colors active:bg-muted " +
+                              (outcomes.index === index ? "bg-muted/70" : "")
+                            }
+                          >
+                            <span className="flex items-center gap-2 text-muted-foreground">
+                              <span
+                                className="h-2.5 w-2.5 rounded-sm"
+                                style={{ background: CHART_COLORS.categorical[slice.outcome] }}
+                              />
+                              {slice.name}
+                            </span>
+                            <span className="font-mono tabular-nums text-foreground">{slice.value}</span>
+                          </button>
+                        </li>
+                      ) : (
+                        <li key={slice.outcome} className="flex items-center justify-between text-xs">
+                          <span className="flex items-center gap-2 text-muted-foreground">
+                            <span
+                              className="h-2 w-2 rounded-sm"
+                              style={{ background: CHART_COLORS.categorical[slice.outcome] }}
+                            />
+                            {slice.name}
+                          </span>
+                          <span className="font-mono tabular-nums text-foreground">{slice.value}</span>
+                        </li>
+                      )
+                    )}
                   </ul>
                 </>
               )}
@@ -277,14 +396,39 @@ export default function DashboardPage() {
           </div>
 
           <section className="overflow-hidden rounded-lg border bg-card">
-            <header className="flex items-center justify-between border-b px-5 py-3.5">
+            <header className="flex items-center justify-between border-b px-5 py-3.5 phone:px-4">
               <h2 className="font-heading text-sm font-semibold tracking-tight">Recent calls</h2>
               <Link href="/results" className="text-xs font-medium text-primary hover:underline">
                 View all
               </Link>
             </header>
 
-            <div className="overflow-x-auto">
+            {/* Phone: a stacked list. Five columns do not fit 375px, and a
+                table that scrolls sideways hides the status — the one column
+                someone checking between calls actually wants. */}
+            <ul className="hidden divide-y phone:block">
+              {recentCalls.map((call) => (
+                <li key={call.id} className="px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="min-w-0 truncate text-sm font-medium">{call.lead.name}</p>
+                    <StatusBadge
+                      status={call.status}
+                      requestedAt={call.requestedAt}
+                      now={now}
+                      showPulse
+                    />
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                    <span className="truncate font-mono">{call.lead.phone}</span>
+                    <span className="shrink-0 tabular-nums">
+                      {formatDuration(call.duration)} · {formatTime(call.startedAt || call.requestedAt) || EMPTY}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+
+            <div className="overflow-x-auto phone:hidden">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -349,6 +493,43 @@ function outcomeSector({ key, ...sector }: any) {
       fill={(outcome && CHART_COLORS.categorical[outcome]) || CHART_COLORS.primary}
     />
   );
+}
+
+/**
+ * The phone version of the outcome slice: the selected slice stands out a few
+ * pixels and the rest step back, so what the readout describes is visible in
+ * the chart as well.
+ */
+function phoneOutcomeSector(selected: number | null) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Recharts passes untyped sector props, as for outcomeSector
+  return function PhoneSector({ key, ...sector }: any) {
+    const outcome = sector?.payload?.outcome as string | undefined;
+    const index = sector?.index as number | undefined;
+    const isSelected = selected !== null && index === selected;
+    return (
+      <Sector
+        key={key ?? outcome ?? index}
+        {...sector}
+        outerRadius={(sector?.outerRadius ?? 66) + (isSelected ? 5 : 0)}
+        fill={(outcome && CHART_COLORS.categorical[outcome]) || CHART_COLORS.primary}
+        fillOpacity={index === undefined ? 1 : selectionOpacity(index, selected)}
+      />
+    );
+  };
+}
+
+/** One series' value at the selected point, or null where there is none. */
+function pointValue(points: object[] | undefined, index: number | null, key: string): number | null {
+  if (!points || index === null) return null;
+  const value = (points[index] as Record<string, unknown> | undefined)?.[key];
+  return typeof value === "number" ? value : null;
+}
+
+/** A slice as a percentage of all completed attempts, for the phone readout. */
+function shareOf(slices: { value: number }[], index: number): string {
+  const total = slices.reduce((sum, slice) => sum + slice.value, 0);
+  if (total === 0) return EMPTY;
+  return `${Math.round((slices[index].value / total) * 100)}%`;
 }
 
 function Legend({ color, label }: { color: string; label: string }) {

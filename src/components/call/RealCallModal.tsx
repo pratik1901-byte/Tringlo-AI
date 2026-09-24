@@ -176,14 +176,14 @@ export function RealCallModal({
   return (
     <div
       ref={backdropRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/25 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/25 p-4 phone:items-end phone:p-0"
       role="dialog"
       aria-modal="true"
       aria-label={`Call to ${lead.name}`}
     >
       <div
         ref={panelRef}
-        className="flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-xl border bg-card shadow-xl"
+        className="flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-xl border bg-card shadow-xl phone:max-h-[92dvh] phone:max-w-none phone:rounded-b-none phone:rounded-t-2xl phone:border-x-0 phone:border-b-0 phone:pb-safe"
       >
         {/* Header */}
         <header className="flex items-start justify-between gap-4 border-b px-6 py-4">

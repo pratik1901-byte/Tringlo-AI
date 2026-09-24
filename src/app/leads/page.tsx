@@ -141,17 +141,20 @@ export default function LeadsPage() {
         <>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="relative lg:max-w-xs lg:flex-1">
-              <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground phone:top-3.5" />
               <input
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search name, phone, company or email"
-                className="h-9 w-full rounded-md border bg-card pl-9 pr-3 text-sm outline-none placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-ring"
+                className="h-9 w-full rounded-md border bg-card pl-9 pr-3 text-sm outline-none placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-ring phone:h-11"
               />
             </div>
 
-            <nav className="flex flex-wrap items-center gap-1" aria-label="Filter by status">
+            <nav
+              className="flex flex-wrap items-center gap-1 phone:-mx-4 phone:flex-nowrap phone:overflow-x-auto phone:px-4 phone:pb-1 phone:[scrollbar-width:none]"
+              aria-label="Filter by status"
+            >
               <FilterButton
                 active={statusFilter === "all"}
                 onClick={() => setStatusFilter("all")}
@@ -170,7 +173,78 @@ export default function LeadsPage() {
             </nav>
           </div>
 
-          <div className="overflow-hidden rounded-lg border bg-card">
+          {/* Phone: one card per lead with its actions always showing.
+
+              On the desktop the row actions appear on hover. A phone has no
+              hover, so there they would stay invisible — including the Call
+              button, which is the reason to open this page on a phone. */}
+          <div className="hidden phone:block">
+            {isLoading ? (
+              <ul className="space-y-2" aria-busy="true">
+                {Array.from({ length: 4 }, (_, index) => (
+                  <li key={index} className="h-[104px] animate-pulse rounded-lg border bg-card" />
+                ))}
+              </ul>
+            ) : filtered.length === 0 ? (
+              <p className="rounded-lg border bg-card px-4 py-12 text-center text-sm text-muted-foreground">
+                No leads match these filters.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {filtered.map((lead) => (
+                  <li key={lead.id} className="rounded-lg border bg-card px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium leading-tight">{lead.name}</p>
+                        <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+                          {lead.phone}
+                          {lead.company ? ` · ${lead.company}` : ""}
+                        </p>
+                      </div>
+                      <StatusBadge status={lead.status} showPulse />
+                    </div>
+
+                    <div className="mt-3 flex items-center gap-2">
+                      {lead.suppressed ? (
+                        <span
+                          className="flex h-11 flex-1 items-center text-sm text-muted-foreground"
+                          title={lead.suppressedReason ?? undefined}
+                        >
+                          Do not call
+                        </span>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => setActiveLead(lead)}
+                            className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-md bg-primary text-sm font-medium text-primary-foreground active:bg-primary/90"
+                          >
+                            <Phone className="h-4 w-4" />
+                            Call {lead.name.split(" ")[0]}
+                          </button>
+                          <button
+                            onClick={() => setPendingAction({ kind: "suppress", lead })}
+                            aria-label={`Mark ${lead.name} do not call`}
+                            className="inline-flex h-11 w-11 items-center justify-center rounded-md border text-muted-foreground active:bg-muted"
+                          >
+                            <ShieldOff className="h-4 w-4" />
+                          </button>
+                        </>
+                      )}
+                      <button
+                        onClick={() => setPendingAction({ kind: "delete", lead })}
+                        aria-label={`Delete ${lead.name}`}
+                        className="inline-flex h-11 w-11 items-center justify-center rounded-md border text-muted-foreground active:bg-destructive/10 active:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="overflow-hidden rounded-lg border bg-card phone:hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead className="border-b bg-muted/40 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -312,7 +386,9 @@ function FilterButton({
     <button
       onClick={onClick}
       aria-current={active}
-      className={`rounded-md px-2.5 py-1.5 text-xs font-medium capitalize transition-colors ${
+      // On a phone the filters sit in one scrolling row: `shrink-0` stops them
+      // squashing, and the extra height makes each one a real touch target.
+      className={`rounded-md px-2.5 py-1.5 text-xs font-medium capitalize transition-colors phone:h-9 phone:shrink-0 phone:whitespace-nowrap phone:px-3 ${
         active
           ? "bg-accent text-accent-foreground"
           : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -340,11 +416,11 @@ function ConfirmDialog({
   return (
     <div
       ref={backdropRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/25 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/25 p-4 phone:items-end phone:p-0"
       role="alertdialog"
       aria-modal="true"
     >
-      <div ref={panelRef} className="w-full max-w-sm rounded-xl border bg-card p-6 shadow-xl">
+      <div ref={panelRef} className="w-full max-w-sm rounded-xl border bg-card p-6 shadow-xl phone:max-h-[92dvh] phone:max-w-none phone:overflow-y-auto phone:rounded-b-none phone:rounded-t-2xl phone:border-x-0 phone:border-b-0 phone:pb-safe">
         <h2 className="font-heading text-base font-semibold tracking-tight">
           {isDelete ? `Delete ${action.lead.name}?` : `Mark ${action.lead.name} do not call?`}
         </h2>

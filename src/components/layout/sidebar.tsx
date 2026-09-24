@@ -18,7 +18,11 @@ import {
 import { useAuthStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
-const navigation = [
+/**
+ * Every destination in the app. Shared with the phone navigation, so the two
+ * cannot drift apart when a page is added.
+ */
+export const navigation = [
     { name: "Overview", href: "/dashboard", icon: LayoutDashboard },
     { name: "Leads", href: "/leads", icon: Users },
     { name: "Upload", href: "/upload", icon: Upload },
@@ -30,13 +34,18 @@ const navigation = [
     { name: "Settings", href: "/settings", icon: Settings },
 ];
 
+/** Whether a nav item is the current page, including its sub-routes. */
+export function isNavActive(pathname: string, href: string): boolean {
+    return pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
+}
+
 export function Sidebar() {
     const pathname = usePathname();
     const user = useAuthStore((state) => state.user);
     const signOut = useAuthStore((state) => state.signOut);
 
     return (
-        <aside className="flex h-full w-[220px] flex-col bg-sidebar border-r border-sidebar-border">
+        <aside className="flex h-full w-[220px] flex-col bg-sidebar border-r border-sidebar-border phone:hidden">
             {/* Logo */}
             <div className="flex h-14 items-center gap-2 px-5">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
@@ -50,9 +59,7 @@ export function Sidebar() {
             {/* Navigation */}
             <nav className="flex-1 space-y-0.5 px-3 pt-2">
                 {navigation.map((item) => {
-                    const isActive =
-                        pathname === item.href ||
-                        (item.href !== "/dashboard" && pathname.startsWith(item.href));
+                    const isActive = isNavActive(pathname, item.href);
                     return (
                         <Link
                             key={item.name}

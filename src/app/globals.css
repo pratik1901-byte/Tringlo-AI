@@ -4,6 +4,30 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ------------------------------------------------------------------
+   Phone
+
+   One definition of "phone view", used by every phone-only rule in the app
+   through `phone:` classes. Two cases:
+
+     - anything narrower than 768px, portrait phones and small windows;
+     - a landscape phone, which is wide enough for the desktop layout but
+       too short for it. `pointer: coarse` keeps a short desktop window with
+       a mouse out of this — that is still the web layout.
+
+   The desktop layout is deliberately untouched by all of it. Every phone
+   rule is additive and scoped to this query, so above it the class lists
+   and tokens are exactly what they were.
+
+   The same query appears once more below for the phone theme tokens,
+   because a CSS custom property cannot be set through a variant.
+   ------------------------------------------------------------------ */
+@custom-variant phone {
+  @media (max-width: 767.98px), (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+    @slot;
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -240,4 +264,70 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+
+/* ------------------------------------------------------------------
+   Phone theme
+
+   A small shift, not a second design. On a phone the app is used one-handed,
+   often outdoors, on a screen where a white card on an off-white page almost
+   disappears. So:
+
+     - the page sits a step further back from the cards, so surfaces read as
+       surfaces at arm's length and in daylight;
+     - corners soften slightly, which reads as native on touch devices;
+     - form controls are 16px, because iOS Safari zooms the whole page into
+       any input smaller than that and never zooms back out.
+
+   The brand colour is not touched: it is the same product on every screen.
+
+   Keep this query identical to the `phone` variant above.
+   ------------------------------------------------------------------ */
+@media (max-width: 767.98px), (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+  /* :root:not(.dark) and :root.dark rather than :root and .dark — the theme
+     class sits on <html>, which is also :root, so a bare :root here would
+     outrank .dark and paint the light phone palette over dark mode. */
+  :root:not(.dark) {
+    --background: #F3F2EF;
+    --muted: #EEEDEA;
+    --secondary: #EEEDEA;
+    --border: #E2E0DC;
+    --sidebar: #FFFFFF;
+  }
+
+  :root.dark {
+    --background: #090807;
+    --card: #1A1817;
+    --popover: #1F1C1A;
+    --muted: #1F1C1A;
+    --border: #2C2826;
+    --sidebar: #141211;
+  }
+
+  :root {
+    --radius: 0.625rem;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  /* Tap highlight is replaced by the app's own pressed states. */
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Room for the home indicator and the notch. The viewport is set to
+   `viewport-fit=cover` in the root layout, which is what makes these
+   non-zero on devices that have them. */
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
 }

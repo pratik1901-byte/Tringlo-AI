@@ -84,7 +84,7 @@ export default function FollowUpsPage() {
 
       {error && <ErrorState message={error} onRetry={refresh} />}
 
-      <div className="grid gap-4 sm:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-4 phone:grid-cols-2! phone:gap-3">
         <SummaryTile label="Open" value={counts.open} />
         <SummaryTile
           label="Need a time"
@@ -118,7 +118,91 @@ export default function FollowUpsPage() {
           description="When a customer asks to be called back, Sarvam reports it and the callback appears here automatically."
         />
       ) : (
-        <div className="overflow-hidden rounded-lg border bg-card">
+        <>
+        {/* Phone: one card per callback. The time and the status lead, since
+            "when is this, and is it late" is what someone checks on a phone;
+            the customer's own words sit under them, clamped to two lines. */}
+        <div className="hidden phone:block">
+          {isLoading ? (
+            <ul className="space-y-2" aria-busy="true">
+              {Array.from({ length: 3 }, (_, index) => (
+                <li key={index} className="h-[132px] animate-pulse rounded-lg border bg-card" />
+              ))}
+            </ul>
+          ) : (
+            <ul className="space-y-2">
+              {followUps.map((followUp) => {
+                const { overdue, tone, label } = followUpState(followUp, now);
+                return (
+                  <li key={followUp.id} className="rounded-lg border bg-card px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium leading-tight">{followUp.lead.name}</p>
+                        <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+                          {followUp.lead.phone}
+                        </p>
+                      </div>
+                      <Tag tone={tone}>{label}</Tag>
+                    </div>
+
+                    <p
+                      className={
+                        "mt-2.5 text-sm font-medium tabular-nums " +
+                        (overdue ? "text-red-600 dark:text-red-400" : "text-foreground")
+                      }
+                    >
+                      {/* "No time agreed yet" is a call to action, so it is only
+                          said where one is needed — not on a callback that was
+                          cancelled or already completed. */}
+                      {followUp.scheduledTime
+                        ? formatDateTime(followUp.scheduledTime)
+                        : followUp.status === "needs_scheduling"
+                          ? "No time agreed yet"
+                          : EMPTY}
+                    </p>
+
+                    {followUp.previousResponse && (
+                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                        {followUp.previousResponse}
+                      </p>
+                    )}
+
+                    <div className="mt-3 flex items-center gap-2">
+                      {followUp.lead.suppressed ? (
+                        <span className="flex h-11 flex-1 items-center text-sm text-muted-foreground">
+                          Do not call
+                        </span>
+                      ) : followUp.status === "triggering" || followUp.status === "calling" ? (
+                        <span className="flex h-11 flex-1 items-center text-sm text-muted-foreground">
+                          Calling now
+                        </span>
+                      ) : followUp.status === "retry_pending" ? (
+                        <span className="flex h-11 flex-1 items-center text-sm text-muted-foreground">
+                          Retrying
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => setCallingLead(followUp.lead)}
+                          className="inline-flex h-11 flex-1 items-center justify-center rounded-md bg-primary text-sm font-medium text-primary-foreground active:bg-primary/90"
+                        >
+                          Call now
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setScheduling(followUp)}
+                        className="inline-flex h-11 items-center justify-center rounded-md border px-4 text-sm font-medium text-foreground active:bg-muted"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        <div className="overflow-hidden rounded-lg border bg-card phone:hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="border-b bg-muted/40 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -140,11 +224,7 @@ export default function FollowUpsPage() {
               ) : (
                 <tbody ref={tableRef}>
                   {followUps.map((followUp) => {
-                    const overdue =
-                      followUp.status !== "completed" &&
-                      followUp.status !== "cancelled" &&
-                      followUp.scheduledTime !== null &&
-                      new Date(followUp.scheduledTime).getTime() < now;
+                    const { overdue, tone, label } = followUpState(followUp, now);
 
                     return (
                       <tr
@@ -193,21 +273,7 @@ export default function FollowUpsPage() {
                           {formatText(followUp.timezone)}
                         </td>
                         <td className="px-4 py-3.5">
-                          <Tag
-                            tone={
-                              followUp.status === "completed"
-                                ? "positive"
-                                : followUp.status === "needs_scheduling"
-                                  ? "warning"
-                                  : overdue
-                                    ? "negative"
-                                    : "neutral"
-                            }
-                          >
-                            {overdue && followUp.status === "scheduled"
-                              ? "Overdue"
-                              : formatFollowUpStatus(followUp.status)}
-                          </Tag>
+                          <Tag tone={tone}>{label}</Tag>
                         </td>
                         <td
                           className="hidden max-w-[200px] truncate px-4 py-3.5 text-xs text-muted-foreground xl:table-cell"
@@ -247,6 +313,7 @@ export default function FollowUpsPage() {
             </table>
           </div>
         </div>
+        </>
       )}
 
       {scheduling && (
@@ -330,12 +397,12 @@ function Dialog({
   return (
     <div
       ref={backdropRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/25 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/25 p-4 phone:items-end phone:p-0"
       role="dialog"
       aria-modal="true"
       aria-label={title}
     >
-      <div ref={panelRef} className="w-full max-w-md rounded-xl border bg-card shadow-xl">
+      <div ref={panelRef} className="w-full max-w-md rounded-xl border bg-card shadow-xl phone:max-h-[92dvh] phone:max-w-none phone:overflow-y-auto phone:rounded-b-none phone:rounded-t-2xl phone:border-x-0 phone:border-b-0 phone:pb-safe">
         <header className="flex items-center justify-between border-b px-6 py-4">
           <h2 className="font-heading text-base font-semibold tracking-tight">{title}</h2>
           <button
@@ -700,4 +767,35 @@ function toLocalInputValue(iso: string): string {
   if (Number.isNaN(date.getTime())) return "";
   const offset = date.getTimezoneOffset() * 60_000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+/**
+ * Whether a callback is late, and how its status tag reads.
+ *
+ * Shared by the desktop table and the phone cards so the two can never
+ * disagree about whether the same callback is overdue.
+ */
+function followUpState(
+  followUp: FollowUp,
+  now: number
+): { overdue: boolean; tone: "positive" | "warning" | "negative" | "neutral"; label: string } {
+  const overdue =
+    followUp.status !== "completed" &&
+    followUp.status !== "cancelled" &&
+    followUp.scheduledTime !== null &&
+    new Date(followUp.scheduledTime).getTime() < now;
+
+  const tone =
+    followUp.status === "completed"
+      ? "positive"
+      : followUp.status === "needs_scheduling"
+        ? "warning"
+        : overdue
+          ? "negative"
+          : "neutral";
+
+  const label =
+    overdue && followUp.status === "scheduled" ? "Overdue" : formatFollowUpStatus(followUp.status);
+
+  return { overdue, tone, label };
 }
