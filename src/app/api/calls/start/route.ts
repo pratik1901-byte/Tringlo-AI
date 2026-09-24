@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { requireAuth } from "@/lib/auth/guard";
 import { placeCall } from "@/lib/calls/place-call";
+import { clientKey, rateLimit } from "@/lib/security/rate-limit";
 
 function resolveWebhookBaseUrl(request: NextRequest): string {
   const configured = (process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "").trim();
@@ -20,6 +22,21 @@ function resolveWebhookBaseUrl(request: NextRequest): string {
  * manual call and an autonomous callback pass through identical guards.
  */
 export async function POST(request: NextRequest) {
+  // Placing a call spends real money and rings a real phone, so it requires a
+  // signed-in account — from any device, including a phone on the LAN.
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
+  // Generous for a person working a list, far too few for a script dialling
+  // everyone in the database.
+  const limit = rateLimit(clientKey(request, "calls:start"), 30, 60_000);
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: "Too many calls started in a minute. Wait a moment.", type: "rate_limited" },
+      { status: 429 }
+    );
+  }
+
   try {
     const body = await request.json().catch(() => ({}));
 
@@ -34,6 +51,7 @@ export async function POST(request: NextRequest) {
       agentConfig: body?.agentConfig,
       webhookBaseUrl: resolveWebhookBaseUrl(request),
       origin: "manual",
+      tenantId: auth.tenantId,
     });
 
     if (!result.ok) {

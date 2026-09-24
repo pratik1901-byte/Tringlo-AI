@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { sarvamVoiceService } from "@/lib/providers/sarvam";
+import { requireAuth } from "@/lib/auth/guard";
 
 type Connectivity = "reachable" | "unreachable" | "not_tested";
 
@@ -67,7 +68,10 @@ async function probeSarvam(): Promise<{ connectivity: Connectivity; details: str
  * Reports which server-side settings are present and whether Sarvam accepts
  * them. Credential values themselves never leave the server — only booleans.
  */
-export async function GET() {
+export async function GET(request: Request) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
   try {
     const status = sarvamVoiceService.getConfigurationStatus();
     const probe = await probeSarvam();

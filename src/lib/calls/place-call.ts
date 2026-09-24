@@ -17,12 +17,14 @@ import {
   getAgentConfig,
   getCallRecordsForLead,
   getLead,
+  getLeads,
   getLegacyTenantId,
   getWebhookBaseUrl,
   saveCallRecord,
   saveLead,
 } from "@/lib/db";
 import { getContextForCall } from "@/lib/memory/service";
+import { ownedByTenant } from "@/lib/auth/guard";
 import { buildAgentKnowledgeContext } from "@/lib/rag";
 import { SarvamClientError, sarvamVoiceService } from "@/lib/providers/sarvam";
 import { checkWebhookReachable, reachabilityCheckDisabled } from "@/lib/calls/webhook-reachability";
@@ -93,6 +95,12 @@ export interface PlaceCallInput {
   webhookBaseUrl: string;
   /** Recorded on the call so a scheduled callback is distinguishable from a manual dial. */
   origin: "manual" | "scheduler";
+  /**
+   * The workspace placing the call. Required from the browser, where it comes
+   * from the session; the scheduler omits it and the lead's own workspace is
+   * used. Leads are only ever looked up inside this workspace.
+   */
+  tenantId?: string;
 }
 
 function fail(
@@ -144,7 +152,29 @@ export async function placeCall(input: PlaceCallInput): Promise<PlaceCallResult>
     );
   }
 
-  const storedLead = (input.leadId ? getLead(input.leadId) : undefined) || findLeadByPhone(phone);
+  // The workspace this call belongs to. From the session when a person placed
+  // it; from the lead itself when the scheduler did.
+  const legacyTenant = getLegacyTenantId();
+  const requestedLead = input.leadId ? getLead(input.leadId) : undefined;
+  const tenantId = input.tenantId ?? requestedLead?.tenantId ?? legacyTenant ?? null;
+
+  // A lead id from another workspace is treated as not existing — the same
+  // answer the API gives for any other tenant's record.
+  if (requestedLead && tenantId && !ownedByTenant(requestedLead, tenantId, legacyTenant)) {
+    return fail("invalid_request", "No such lead.", 404);
+  }
+
+  // Matching by phone stays inside the workspace. Across workspaces the same
+  // number is a different customer, with its own do-not-call status.
+  const storedLead =
+    requestedLead ||
+    (tenantId
+      ? getLeads().find(
+          (lead) =>
+            ownedByTenant(lead, tenantId, legacyTenant) &&
+            lead.phone.replace(/\D/g, "").slice(-10) === phone.replace(/\D/g, "").slice(-10)
+        )
+      : findLeadByPhone(phone));
 
   if (storedLead?.suppressed) {
     return fail(
@@ -188,6 +218,7 @@ export async function placeCall(input: PlaceCallInput): Promise<PlaceCallResult>
   const now = new Date().toISOString();
   const lead: Lead = storedLead ?? {
     id: leadId,
+    tenantId,
     name: (input.leadName || "").trim() || "Customer",
     phone,
     company: input.leadCompany,
@@ -212,9 +243,10 @@ export async function placeCall(input: PlaceCallInput): Promise<PlaceCallResult>
   // history, chosen for this particular call rather than pasted wholesale.
   // An unknown customer yields an empty context, which is what keeps a genuine
   // first call sounding like one.
-  const tenantId = lead.tenantId ?? getLegacyTenantId();
-  const memoryContext = tenantId
-    ? getContextForCall(tenantId, lead, {
+  // The workspace was resolved when the lead was; memory is looked up there.
+  const memoryTenantId = lead.tenantId ?? tenantId;
+  const memoryContext = memoryTenantId
+    ? getContextForCall(memoryTenantId, lead, {
         isFollowUp: input.origin === "scheduler",
         topic: input.campaignName ?? agentConfig.salesObjective ?? null,
       })
@@ -252,6 +284,7 @@ export async function placeCall(input: PlaceCallInput): Promise<PlaceCallResult>
 
     const record: CallRecord = {
       id: callId,
+      tenantId: lead.tenantId ?? tenantId,
       leadId,
       lead: { ...lead, status: "calling" },
       status: "calling",

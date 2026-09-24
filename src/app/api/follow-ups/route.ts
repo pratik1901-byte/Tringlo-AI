@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { requireAuth, scopeToTenant } from "@/lib/auth/guard";
+import { notFound, ownedByTenant, requireAuth, scopeToTenant } from "@/lib/auth/guard";
 import { getFollowUp, getFollowUps, getLead, getLegacyTenantId, isLeadSuppressed, saveFollowUp, updateFollowUp } from "@/lib/db";
 import type { FollowUp } from "@/lib/types";
 
@@ -35,8 +35,15 @@ function parseScheduledTime(raw: unknown): string | null | undefined {
  * so the two are never confused in the UI.
  */
 export async function POST(request: NextRequest) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
   try {
     const body = await request.json();
+    // A follow-up can only be added for one of this workspace's own leads.
+    if (!ownedByTenant(getLead(body?.leadId), auth.tenantId, getLegacyTenantId())) {
+      return notFound("Lead not found");
+    }
 
     if (!body?.leadId || !body?.lead) {
       return NextResponse.json({ error: "leadId and lead are required" }, { status: 400 });
@@ -60,6 +67,7 @@ export async function POST(request: NextRequest) {
     const now = new Date().toISOString();
     const followUp: FollowUp = {
       id: body.id || `fu_manual_${Date.now()}`,
+      tenantId: auth.tenantId,
       leadId: body.leadId,
       lead: getLead(body.leadId) ?? body.lead,
       previousResponse: body.previousResponse?.trim() || null,
@@ -99,6 +107,9 @@ const PAST_TOLERANCE_MS = 2 * 60 * 1000;
  * callback be marked `completed` when no call ever happened.
  */
 export async function PATCH(request: NextRequest) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
   try {
     const body = await request.json();
     if (!body?.id || typeof body.id !== "string") {
@@ -106,7 +117,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const existing = getFollowUp(body.id);
-    if (!existing) {
+    if (!existing || !ownedByTenant(existing, auth.tenantId, getLegacyTenantId())) {
       return NextResponse.json({ error: "Follow-up not found" }, { status: 404 });
     }
 

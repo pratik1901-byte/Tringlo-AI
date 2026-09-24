@@ -54,6 +54,21 @@ export const viewport: Viewport = {
  */
 const THEME_BOOTSTRAP = `(function(){try{var s=localStorage.getItem("dialo-theme");var d=s==="dark"||(!s&&window.matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.toggle("dark",d);}catch(e){}})();`;
 
+/**
+ * Development only: stops React's DevTools timing from crashing the page on
+ * some phones.
+ *
+ * React 19's development build records every component render with
+ * `performance.measure(name, { start, end })`, without error handling. On
+ * some mobile browsers the start time it passes is negative, the browser
+ * throws "cannot have a negative time stamp", and Next's error overlay covers
+ * the page. The production build makes no such calls, so this never ships.
+ *
+ * Only that one error is swallowed — the cost is a missing entry in a
+ * DevTools timeline. Any other error from `measure` is re-thrown.
+ */
+const DEV_MEASURE_GUARD = `(function(){try{var p=window.performance;if(!p||!p.measure||p.__dialoGuard)return;var m=p.measure.bind(p);p.measure=function(){try{return m.apply(null,arguments)}catch(e){if(e&&/negative time ?stamp/i.test(String(e.message)))return undefined;throw e}};p.__dialoGuard=true}catch(e){}})();`;
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
@@ -62,6 +77,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
+        {/* Before React loads, so its first render is already covered. */}
+        {process.env.NODE_ENV !== "production" && (
+          <script dangerouslySetInnerHTML={{ __html: DEV_MEASURE_GUARD }} />
+        )}
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }} />
       </head>
       <body className="flex min-h-full flex-col">

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-import { getCallRecord, getCallRecordByAttemptId, getReachabilityHistory } from "@/lib/db";
+import { getCallRecord, getCallRecordByAttemptId, getLegacyTenantId, getReachabilityHistory } from "@/lib/db";
 import { isWorthReconciling, reconcileCallWithProvider } from "@/lib/calls/reconcile";
+import { ownedByTenant, requireAuth } from "@/lib/auth/guard";
 
 /**
  * GET /api/calls/[id]
@@ -13,12 +14,17 @@ import { isWorthReconciling, reconcileCallWithProvider } from "@/lib/calls/recon
  *
  * `id` accepts either Dialo's call id or the Sarvam attempt_id.
  */
-export async function GET(_request: NextRequest, ctx: RouteContext<"/api/calls/[id]">) {
+export async function GET(request: NextRequest, ctx: RouteContext<"/api/calls/[id]">) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
   const { id } = await ctx.params;
 
   const record = getCallRecord(id) || getCallRecordByAttemptId(id);
 
-  if (!record) {
+  // Another workspace's call reads as missing, not forbidden, so its
+  // existence is not confirmed.
+  if (!record || !ownedByTenant(record, auth.tenantId, getLegacyTenantId())) {
     return NextResponse.json(
       { error: "No call found with that id.", callId: id },
       { status: 404 }

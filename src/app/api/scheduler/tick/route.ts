@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { runSchedulerTick } from "@/lib/scheduling/scheduler";
 import { getDueFollowUps } from "@/lib/db";
 import { LOCK_TIMEOUT_MS } from "@/lib/scheduling/scheduler";
+import { requireAuth } from "@/lib/auth/guard";
 
 /**
  * POST /api/scheduler/tick
@@ -13,7 +14,11 @@ import { LOCK_TIMEOUT_MS } from "@/lib/scheduling/scheduler";
  * can drive it instead on a host that does not keep a process alive between
  * requests, and so the behaviour can be tested without waiting for a tick.
  */
-export async function POST() {
+export async function POST(request: Request) {
+  // A manual tick can place due callbacks, so it needs a signed-in account.
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
   try {
     return NextResponse.json(await runSchedulerTick());
   } catch (error: unknown) {
@@ -24,7 +29,11 @@ export async function POST() {
 }
 
 /** GET reports what is waiting, without placing anything. */
-export function GET() {
+export async function GET(request: Request) {
+  // Lists who is due a call, so it is not public either.
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
   const due = getDueFollowUps(Date.now(), LOCK_TIMEOUT_MS);
   return NextResponse.json({
     due: due.length,

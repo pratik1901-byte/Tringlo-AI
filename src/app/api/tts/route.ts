@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { requireAuth } from "@/lib/auth/guard";
 
 const SARVAM_TTS_URL = "https://api.sarvam.ai/text-to-speech";
 
@@ -11,6 +12,9 @@ const BULBUL_V3_SPEAKERS = new Set([
 ]);
 
 export async function POST(request: NextRequest) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
     const apiKey = process.env.SARVAM_API_KEY;
     if (!apiKey) {
         return Response.json(

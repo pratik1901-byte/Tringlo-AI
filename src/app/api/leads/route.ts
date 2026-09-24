@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { requireAuth, scopeToTenant } from "@/lib/auth/guard";
-import { deleteLead, getLeads, getLegacyTenantId, saveLead, suppressLead, updateLead } from "@/lib/db";
+import { notFound, ownedByTenant, requireAuth, scopeToTenant } from "@/lib/auth/guard";
+import { deleteLead, getLead, getLeads, getLegacyTenantId, saveLead, suppressLead, updateLead } from "@/lib/db";
 import type { Lead } from "@/lib/types";
 
 export async function GET(request: NextRequest) {
@@ -63,8 +63,14 @@ export async function POST(request: NextRequest) {
  * assignment that skips that step.
  */
 export async function PATCH(request: NextRequest) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
   try {
     const body = await request.json();
+    if (!ownedByTenant(getLead(body?.id), auth.tenantId, getLegacyTenantId())) {
+      return notFound("Lead not found");
+    }
     if (!body?.id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
     }
@@ -95,10 +101,16 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
   try {
     const id = new URL(request.url).searchParams.get("id");
     if (!id) {
       return NextResponse.json({ error: "id query parameter is required" }, { status: 400 });
+    }
+    if (!ownedByTenant(getLead(id), auth.tenantId, getLegacyTenantId())) {
+      return notFound("Lead not found");
     }
 
     if (!deleteLead(id)) {

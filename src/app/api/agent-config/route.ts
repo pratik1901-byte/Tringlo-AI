@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getAgentConfig, getCallingWindow, saveAgentConfig, saveCallingWindow } from "@/lib/db";
+import { requireAuth } from "@/lib/auth/guard";
 
 /**
  * The agent configuration, stored server-side.
@@ -9,7 +10,10 @@ import { getAgentConfig, getCallingWindow, saveAgentConfig, saveCallingWindow } 
  * product context has to live on the server. Holding it only in localStorage is
  * what made autonomous callbacks impossible.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
   return NextResponse.json({
     agentConfig: getAgentConfig(),
     callingWindow: getCallingWindow(),
@@ -17,6 +21,9 @@ export async function GET() {
 }
 
 export async function PUT(request: NextRequest) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
   try {
     const body = await request.json();
 
