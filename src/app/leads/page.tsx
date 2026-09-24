@@ -14,7 +14,6 @@ import {
   ErrorState,
   PageHeader,
   SkeletonRows,
-  StatusBadge,
 } from "@/components/ui/data-display";
 import { RealCallModal } from "@/components/call/RealCallModal";
 
@@ -193,15 +192,12 @@ export default function LeadsPage() {
               <ul className="space-y-2">
                 {filtered.map((lead) => (
                   <li key={lead.id} className="rounded-lg border bg-card px-4 py-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate font-medium leading-tight">{lead.name}</p>
-                        <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
-                          {lead.phone}
-                          {lead.company ? ` · ${lead.company}` : ""}
-                        </p>
-                      </div>
-                      <StatusBadge status={lead.status} showPulse />
+                    <div className="min-w-0">
+                      <p className="truncate font-medium leading-tight">{lead.name}</p>
+                      <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+                        {lead.phone}
+                        {lead.company ? ` · ${lead.company}` : ""}
+                      </p>
                     </div>
 
                     <div className="mt-3 flex items-center gap-2">
@@ -253,18 +249,17 @@ export default function LeadsPage() {
                     <th className="px-4 py-3">Phone</th>
                     <th className="hidden px-4 py-3 md:table-cell">Company</th>
                     <th className="hidden px-4 py-3 lg:table-cell">Scheduled</th>
-                    <th className="px-4 py-3">Status</th>
                     <th className="px-5 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
 
                 {isLoading ? (
-                  <SkeletonRows rows={6} columns={6} />
+                  <SkeletonRows rows={6} columns={5} />
                 ) : (
                   <tbody ref={tableRef}>
                     {filtered.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="px-5 py-14 text-center text-sm text-muted-foreground">
+                        <td colSpan={5} className="px-5 py-14 text-center text-sm text-muted-foreground">
                           No leads match these filters.
                         </td>
                       </tr>
@@ -287,9 +282,6 @@ export default function LeadsPage() {
                           </td>
                           <td className="hidden px-4 py-3.5 text-xs text-muted-foreground lg:table-cell">
                             {lead.callingDate ? `${lead.callingDate} · ${lead.callingTime}` : EMPTY}
-                          </td>
-                          <td className="px-4 py-3.5">
-                            <StatusBadge status={lead.status} showPulse />
                           </td>
                           <td className="px-5 py-3.5 text-right">
                             <div className="flex items-center justify-end gap-1.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">

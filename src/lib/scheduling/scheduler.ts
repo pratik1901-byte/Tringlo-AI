@@ -26,6 +26,7 @@ import {
   updateFollowUp,
 } from "@/lib/db";
 import { effectiveWebhookBaseUrl, placeCall } from "@/lib/calls/place-call";
+import { repairStaleLeadStatuses } from "@/lib/calls/lead-status";
 import { isWorthReconciling, reconcileCallWithProvider } from "@/lib/calls/reconcile";
 import { getCallRecords } from "@/lib/db";
 import { instantToZonedParts, isValidTimeZone, zonedTimeToInstant } from "./time";
@@ -401,6 +402,9 @@ export async function runSchedulerTick(now = Date.now()): Promise<TickReport> {
   // cannot be closed out while the call it placed is still open.
   const outcomes: TickOutcome[] = await reconcileInFlightCalls(now);
   outcomes.push(...reconcileInFlightFollowUps(now));
+
+  // Backstop: any lead still shown as calling whose latest call has settled.
+  repairStaleLeadStatuses();
 
   const due = getDueFollowUps(now, LOCK_TIMEOUT_MS);
 

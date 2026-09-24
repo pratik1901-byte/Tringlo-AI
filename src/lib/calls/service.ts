@@ -21,11 +21,11 @@ import {
   saveRawEvent,
   suppressLead,
   updateFollowUp,
-  updateLead,
 } from "@/lib/db";
 import { deriveAiStatus, parseSarvamWebhook } from "@/lib/providers/sarvam/webhooks";
 import { prefetchRecordingLater } from "@/lib/recordings";
 import { recordCallInMemory } from "@/lib/memory/service";
+import { syncLeadStatus } from "@/lib/calls/lead-status";
 import type { SarvamWebhookPayload } from "@/lib/providers/sarvam/types";
 import type { AICallResult, CallRecord, CallStatus, FollowUp, Lead } from "@/lib/types";
 import { isTerminalCallStatus } from "@/lib/types";
@@ -306,7 +306,10 @@ export function applySarvamEvent(rawPayload: SarvamWebhookPayload): ApplyResult 
       `Customer requested do-not-call during attempt ${attemptId}.`
     );
   } else {
-    updateLead(existing.leadId, { status: event.status, lastAttemptId: attemptId });
+    // The lead takes the status of its most recent call — which is this one,
+    // unless this is a late webhook for an older attempt, in which case the
+    // newer call's status is correctly left in place.
+    syncLeadStatus(existing.leadId);
   }
 
   let followUpId: string | null = null;

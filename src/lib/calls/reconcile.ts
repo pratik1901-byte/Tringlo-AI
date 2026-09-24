@@ -18,6 +18,7 @@
 // never touches a call the webhook has already settled.
 // ============================================================
 
+import { syncLeadStatus } from "@/lib/calls/lead-status";
 import { getCallRecord, updateCallRecord } from "@/lib/db";
 import { getProviderAttemptStatus, isAttemptPollingConfigured } from "@/lib/providers/sarvam/attempts";
 import { prefetchRecordingLater } from "@/lib/recordings";
@@ -89,6 +90,10 @@ export async function reconcileCallWithProvider(callId: string): Promise<Reconci
     // conversation fields are still empty and the webhook may yet fill them.
     providerStatus: `analytics:${provider.status}`,
   });
+
+  // The lead has to hear about it too. This path used to update only the call,
+  // which left leads saying "calling" for calls that had long since finished.
+  syncLeadStatus(record.leadId);
 
   if (connected && provider.interactionId) {
     prefetchRecordingLater(provider.interactionId);
