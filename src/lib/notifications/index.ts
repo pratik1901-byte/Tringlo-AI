@@ -11,7 +11,10 @@
 // dashboard counts with (lib/metrics isInterested), so the alert and the
 // numbers on screen can never disagree about who was interested.
 //
-// Neither may fail a call. Every send is best-effort, logged, and caught.
+// The markup lives in lib/mail/templates. This module decides when to send
+// and gathers the figures; it never builds HTML itself.
+//
+// Neither email may fail a call. Every send is best-effort, logged, and caught.
 // ============================================================
 
 import { scopeToTenant } from "@/lib/auth/guard";
@@ -27,21 +30,40 @@ import {
   saveNotificationSettings,
   updateCallRecord,
 } from "@/lib/db";
-import { escapeHtml, isMailConfigured, mailLayout, sendMail } from "@/lib/mail/mailer";
+import { isMailConfigured, sendMail } from "@/lib/mail/mailer";
+import { callbackText, dailySummaryEmail, interestedEmail, testEmail } from "@/lib/mail/templates";
 import { isConnected, isInterested } from "@/lib/metrics";
 import type { CallRecord } from "@/lib/types";
 
 /** Hour of the day, in the calling timezone, when the daily summary goes out. */
 export const SUMMARY_HOUR = 19;
 
+function timeZone(): string {
+  return getCallingWindow().timezone || "Asia/Kolkata";
+}
+
+/** "7 PM IST" — how the summary time is described to people. */
+export function summaryTimeLabel(): string {
+  const zone = timeZone();
+  const abbreviation =
+    new Intl.DateTimeFormat("en-IN", { timeZone: zone, timeZoneName: "short" })
+      .formatToParts(new Date())
+      .find((part) => part.type === "timeZoneName")?.value ?? "";
+  const hour12 = SUMMARY_HOUR % 12 || 12;
+  return `${hour12} ${SUMMARY_HOUR < 12 ? "AM" : "PM"}${abbreviation ? ` ${abbreviation}` : ""}`;
+}
+
 /** Where a workspace's email goes: the address set in Settings, else the owner's login. */
 export function recipientFor(tenantId: string): string | null {
   const settings = getNotificationSettings(tenantId);
   if (settings.recipient) return settings.recipient;
-  const owner =
-    getUsersForTenant(tenantId).find((user) => user.role === "owner") ??
-    getUsersForTenant(tenantId)[0];
+  const users = getUsersForTenant(tenantId);
+  const owner = users.find((user) => user.role === "owner") ?? users[0];
   return owner?.email ?? null;
+}
+
+function workspaceName(tenantId: string): string {
+  return getTenant(tenantId)?.name ?? "your workspace";
 }
 
 function tenantOfCall(record: CallRecord): string | null {
@@ -65,9 +87,7 @@ export async function notifyIfInterested(record: CallRecord): Promise<void> {
 
     const tenantId = tenantOfCall(record);
     if (!tenantId) return;
-
-    const settings = getNotificationSettings(tenantId);
-    if (!settings.emailAlerts) return;
+    if (!getNotificationSettings(tenantId).emailAlerts) return;
 
     const to = recipientFor(tenantId);
     if (!to) return;
@@ -76,46 +96,23 @@ export async function notifyIfInterested(record: CallRecord): Promise<void> {
     // send; a failed send is logged rather than retried into a flood.
     updateCallRecord(record.id, { interestAlertSentAt: new Date().toISOString() });
 
-    const name = record.lead?.name || record.lead?.phone || "A lead";
-    const rows: Array<[string, string | null | undefined]> = [
-      ["Phone", record.lead?.phone],
-      ["Interest", record.interestLevel],
-      ["What they need", record.customerRequirement],
-      ["Next step", record.chosenNextStep ?? record.nextAction],
-      ["Callback", record.followUpDate ? `${record.followUpDate} ${record.followUpTime ?? ""}`.trim() : null],
-    ];
+    const callback = callbackText(record.followUpDate, record.followUpTime);
 
-    const table = rows
-      .filter(([, value]) => value && String(value).trim())
-      .map(
-        ([label, value]) =>
-          `<tr><td style="padding:6px 12px 6px 0;font-size:13px;color:#78716c;vertical-align:top">${escapeHtml(
-            label
-          )}</td><td style="padding:6px 0;font-size:13px">${escapeHtml(String(value))}</td></tr>`
-      )
-      .join("");
-
-    const summary = record.aiSummary
-      ? `<p style="margin:16px 0 0;font-size:14px;line-height:1.6">${escapeHtml(record.aiSummary)}</p>`
-      : "";
-
-    const result = await sendMail({
-      to,
-      subject: `Interested lead: ${name}`,
-      text:
-        `${name} was marked interested on a call just now.\n\n` +
-        rows
-          .filter(([, value]) => value && String(value).trim())
-          .map(([label, value]) => `${label}: ${value}`)
-          .join("\n") +
-        (record.aiSummary ? `\n\n${record.aiSummary}` : ""),
-      html: mailLayout(
-        `${name} is interested`,
-        `<p style="margin:0 0 12px;font-size:14px;line-height:1.6">The agent marked this lead interested on a call that just ended.</p>
-<table style="border-collapse:collapse">${table}</table>${summary}`
-      ),
+    const email = interestedEmail({
+      workspace: workspaceName(tenantId),
+      name: record.lead?.name || record.lead?.phone || "A lead",
+      phone: record.lead?.phone ?? null,
+      interestLevel: record.interestLevel ?? null,
+      requirement: record.customerRequirement ?? null,
+      nextStep: record.chosenNextStep ?? record.nextAction ?? null,
+      callback,
+      summary: record.aiSummary ?? null,
+      endedAt: record.endedAt ?? null,
+      durationSeconds: record.duration ?? null,
+      timeZone: timeZone(),
     });
 
+    const result = await sendMail({ to, ...email });
     console.log(`NOTIFY_INTERESTED call=${record.id} sent=${result.ok}`);
   } catch (error) {
     console.error("NOTIFY_INTERESTED_FAILED", error instanceof Error ? error.message : error);
@@ -127,9 +124,9 @@ export async function notifyIfInterested(record: CallRecord): Promise<void> {
 // ------------------------------------------------------------------
 
 /** The date and hour right now in a timezone, e.g. { date: "2026-09-24", hour: 19 }. */
-function localNow(timeZone: string, now: number): { date: string; hour: number } {
+function localNow(zone: string, now: number): { date: string; hour: number } {
   const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
+    timeZone: zone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -140,10 +137,16 @@ function localNow(timeZone: string, now: number): { date: string; hour: number }
   return { date: `${get("year")}-${get("month")}-${get("day")}`, hour: Number(get("hour")) };
 }
 
-function localDate(iso: string | null | undefined, timeZone: string): string | null {
+function localDate(iso: string | null | undefined, zone: string): string | null {
   if (!iso) return null;
   const time = new Date(iso).getTime();
-  return Number.isFinite(time) ? localNow(timeZone, time).date : null;
+  return Number.isFinite(time) ? localNow(zone, time).date : null;
+}
+
+/** The calendar day before or after a YYYY-MM-DD date. */
+function shiftDate(date: string, days: number): string {
+  const noon = new Date(`${date}T12:00:00Z`).getTime() + days * 24 * 60 * 60 * 1000;
+  return new Date(noon).toISOString().slice(0, 10);
 }
 
 export interface DailySummary {
@@ -153,98 +156,78 @@ export interface DailySummary {
   notPicked: number;
   busy: number;
   failed: number;
+  talkSeconds: number;
   interested: CallRecord[];
-  followUpsDue: number;
+  tomorrow: Array<{ name: string; phone: string | null; at: string | null }>;
 }
 
 /** Everything a workspace's calls did on one local date. */
-export function buildDailySummary(tenantId: string, date: string, timeZone: string): DailySummary {
+export function buildDailySummary(tenantId: string, date: string, zone: string): DailySummary {
   const legacy = getLegacyTenantId();
   const calls = scopeToTenant(getCallRecords(), tenantId, legacy).filter(
-    (call) => localDate(call.requestedAt || call.startedAt, timeZone) === date
+    (call) => localDate(call.requestedAt || call.startedAt, zone) === date
   );
 
-  const tomorrow = localNow(timeZone, new Date(`${date}T12:00:00Z`).getTime() + 24 * 3600 * 1000).date;
-  const followUpsDue = scopeToTenant(getFollowUps(), tenantId, legacy).filter(
-    (followUp) =>
-      (followUp.status === "scheduled" || followUp.status === "retry_pending") &&
-      localDate(followUp.nextAttemptAt ?? followUp.scheduledTime, timeZone) === tomorrow
-  ).length;
+  const tomorrowDate = shiftDate(date, 1);
+  const tomorrow = scopeToTenant(getFollowUps(), tenantId, legacy)
+    .filter(
+      (followUp) =>
+        (followUp.status === "scheduled" || followUp.status === "retry_pending") &&
+        localDate(followUp.nextAttemptAt ?? followUp.scheduledTime, zone) === tomorrowDate
+    )
+    .map((followUp) => ({
+      name: followUp.lead?.name || followUp.lead?.phone || "Lead",
+      phone: followUp.lead?.phone ?? null,
+      at: followUp.nextAttemptAt ?? followUp.scheduledTime ?? null,
+    }))
+    .sort((a, b) => String(a.at).localeCompare(String(b.at)));
+
+  const connected = calls.filter(isConnected);
 
   return {
     date,
     placed: calls.length,
-    connected: calls.filter(isConnected).length,
+    connected: connected.length,
     notPicked: calls.filter((call) => call.status === "no_answer").length,
     busy: calls.filter((call) => call.status === "busy").length,
     failed: calls.filter((call) => call.status === "failed" || call.status === "provider_error").length,
+    talkSeconds: connected.reduce((sum, call) => sum + (call.duration ?? 0), 0),
     interested: calls.filter(isInterested),
-    followUpsDue,
+    tomorrow,
   };
 }
 
-export async function sendDailySummary(tenantId: string, summary: DailySummary): Promise<boolean> {
+export async function sendDailySummary(tenantId: string, date: string): Promise<boolean> {
   const to = recipientFor(tenantId);
   if (!to) return false;
 
-  const workspace = getTenant(tenantId)?.name ?? "Your workspace";
-  const pretty = new Date(`${summary.date}T12:00:00Z`).toLocaleDateString("en-IN", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    timeZone: "UTC",
+  const zone = timeZone();
+  const today = buildDailySummary(tenantId, date, zone);
+  const yesterday = buildDailySummary(tenantId, shiftDate(date, -1), zone);
+
+  const email = dailySummaryEmail({
+    workspace: workspaceName(tenantId),
+    date,
+    timeZone: zone,
+    summaryTime: summaryTimeLabel(),
+    placed: today.placed,
+    connected: today.connected,
+    notPicked: today.notPicked,
+    busy: today.busy,
+    failed: today.failed,
+    talkSeconds: today.talkSeconds,
+    interested: today.interested.map((call) => ({
+      name: call.lead?.name || call.lead?.phone || "Lead",
+      phone: call.lead?.phone ?? null,
+      nextStep: call.chosenNextStep ?? call.nextAction ?? null,
+    })),
+    tomorrow: today.tomorrow,
+    // A comparison against a day with no calls at all says nothing useful.
+    yesterday: yesterday.placed > 0 ? { placed: yesterday.placed, connected: yesterday.connected } : null,
   });
 
-  const figures: Array<[string, number]> = [
-    ["Calls placed", summary.placed],
-    ["Connected", summary.connected],
-    ["Not picked", summary.notPicked],
-    ["Busy / declined", summary.busy],
-    ["Call failed", summary.failed],
-    ["Interested", summary.interested.length],
-    ["Follow-ups due tomorrow", summary.followUpsDue],
-  ];
-
-  const table = figures
-    .map(
-      ([label, value]) =>
-        `<tr><td style="padding:6px 16px 6px 0;font-size:13px;color:#78716c">${escapeHtml(
-          label
-        )}</td><td style="padding:6px 0;font-size:14px;font-weight:600;text-align:right">${value}</td></tr>`
-    )
-    .join("");
-
-  const interestedList =
-    summary.interested.length > 0
-      ? `<p style="margin:20px 0 6px;font-size:13px;font-weight:600">Interested today</p><ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.7">${summary.interested
-          .map(
-            (call) =>
-              `<li>${escapeHtml(call.lead?.name || call.lead?.phone || "Lead")}${
-                call.lead?.phone ? ` · ${escapeHtml(call.lead.phone)}` : ""
-              }</li>`
-          )
-          .join("")}</ul>`
-      : "";
-
-  const quiet = summary.placed === 0
-    ? `<p style="margin:0 0 12px;font-size:14px">No calls were placed today.</p>`
-    : "";
-
-  const result = await sendMail({
-    to,
-    subject: `Dialo daily summary — ${pretty}`,
-    text:
-      `${workspace} — ${pretty}\n\n` +
-      figures.map(([label, value]) => `${label}: ${value}`).join("\n") +
-      (summary.interested.length
-        ? `\n\nInterested today:\n${summary.interested
-            .map((call) => `- ${call.lead?.name || call.lead?.phone}`)
-            .join("\n")}`
-        : ""),
-    html: mailLayout(`${workspace} — ${pretty}`, `${quiet}<table style="border-collapse:collapse;width:100%">${table}</table>${interestedList}`),
-  });
-
-  console.log(`NOTIFY_DAILY_SUMMARY tenant=${tenantId} date=${summary.date} sent=${result.ok}`);
+  const result = await sendMail({ to, ...email });
+  console.log(`NOTIFY_DAILY_SUMMARY tenant=${tenantId} date=${date} sent=${result.ok}`);
   return result.ok;
 }
 
@@ -259,8 +242,7 @@ export async function sendDailySummary(tenantId: string, summary: DailySummary):
 export async function runDailySummaries(now = Date.now()): Promise<number> {
   if (!isMailConfigured()) return 0;
 
-  const timeZone = getCallingWindow().timezone || "Asia/Kolkata";
-  const { date, hour } = localNow(timeZone, now);
+  const { date, hour } = localNow(timeZone(), now);
   if (hour < SUMMARY_HOUR) return 0;
 
   let sent = 0;
@@ -269,9 +251,7 @@ export async function runDailySummaries(now = Date.now()): Promise<number> {
 
     saveNotificationSettings(settings.tenantId, { lastSummaryDate: date });
     try {
-      if (await sendDailySummary(settings.tenantId, buildDailySummary(settings.tenantId, date, timeZone))) {
-        sent++;
-      }
+      if (await sendDailySummary(settings.tenantId, date)) sent++;
     } catch (error) {
       console.error("NOTIFY_DAILY_SUMMARY_FAILED", error instanceof Error ? error.message : error);
     }
@@ -279,22 +259,26 @@ export async function runDailySummaries(now = Date.now()): Promise<number> {
   return sent;
 }
 
+// ------------------------------------------------------------------
+// Test email
+// ------------------------------------------------------------------
+
 /** For the Settings page's test button: proves delivery without waiting for a real event. */
 export async function sendTestEmail(tenantId: string): Promise<{ ok: boolean; to: string | null; reason?: string }> {
   const to = recipientFor(tenantId);
   if (!to) return { ok: false, to: null, reason: "No recipient address is set." };
 
-  const workspace = getTenant(tenantId)?.name ?? "your workspace";
-  const result = await sendMail({
-    to,
-    subject: "Dialo email is working",
-    text: `This is a test from ${workspace}. Interested-lead alerts and the daily summary will arrive at this address.`,
-    html: mailLayout(
-      "Email is working",
-      `<p style="margin:0;font-size:14px;line-height:1.6">This is a test from ${escapeHtml(
-        workspace
-      )}. Interested-lead alerts and the daily summary will arrive at this address.</p>`
-    ),
+  const settings = getNotificationSettings(tenantId);
+  const email = testEmail({
+    workspace: workspaceName(tenantId),
+    recipient: to,
+    sentAt: new Date().toISOString(),
+    timeZone: timeZone(),
+    emailAlerts: settings.emailAlerts,
+    dailySummary: settings.dailySummary,
+    summaryTime: summaryTimeLabel(),
   });
+
+  const result = await sendMail({ to, ...email });
   return result.ok ? { ok: true, to } : { ok: false, to, reason: result.reason };
 }

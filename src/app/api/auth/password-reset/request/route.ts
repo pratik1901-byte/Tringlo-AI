@@ -16,8 +16,9 @@
 import { NextResponse } from "next/server";
 
 import { OTP_TTL_MS, generateOtp, hashOtp, newOtpSalt } from "@/lib/auth/otp";
-import { findUserByEmail, openPasswordReset } from "@/lib/db";
-import { escapeHtml, isMailConfigured, mailLayout, sendMail } from "@/lib/mail/mailer";
+import { findUserByEmail, getCallingWindow, openPasswordReset } from "@/lib/db";
+import { isMailConfigured, sendMail } from "@/lib/mail/mailer";
+import { otpEmail } from "@/lib/mail/templates";
 import { clientKey, rateLimit } from "@/lib/security/rate-limit";
 
 const GENERIC = {
@@ -84,23 +85,15 @@ export async function POST(request: Request) {
     closedAt: null,
   });
 
-  const spaced = `${code.slice(0, 3)} ${code.slice(3)}`;
-  const sent = await sendMail({
-    to: user.email,
-    subject: `${spaced} is your Dialo reset code`,
-    text:
-      `Your Dialo password reset code is ${spaced}.\n\n` +
-      `It expires in 10 minutes. If you did not ask to reset your password, ignore this email — ` +
-      `your password has not changed.`,
-    html: mailLayout(
-      "Reset your password",
-      `<p style="margin:0 0 16px;font-size:14px;line-height:1.6">Use this code to set a new password${
-        user.name ? `, ${escapeHtml(user.name)}` : ""
-      }:</p>
-<p style="margin:0 0 20px;font-size:30px;font-weight:600;letter-spacing:6px;font-family:ui-monospace,Menlo,monospace">${spaced}</p>
-<p style="margin:0;font-size:13px;line-height:1.6;color:#78716c">It expires in 10 minutes. If you did not ask for this, ignore this email — your password has not changed.</p>`
-    ),
+  const message = otpEmail({
+    name: user.name || null,
+    email: user.email,
+    code,
+    expiresInMinutes: Math.round(OTP_TTL_MS / 60_000),
+    expiresAt: new Date(now + OTP_TTL_MS).toISOString(),
+    timeZone: getCallingWindow().timezone || "Asia/Kolkata",
   });
+  const sent = await sendMail({ to: user.email, ...message });
 
   console.log(`AUTH_RESET_CODE_ISSUED user=${user.id} sent=${sent.ok}`);
 
