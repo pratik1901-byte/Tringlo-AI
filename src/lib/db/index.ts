@@ -11,6 +11,8 @@
 
 import fs from "fs";
 import path from "path";
+
+import { blobTarget, isBlobConfigured, loadBlob, saveBlob } from "./blob-store";
 import type {
   Appointment,
   AppointmentEvent,
@@ -335,51 +337,7 @@ function readDb(): DatabaseSchema {
   if (fs.existsSync(DB_FILE)) {
     try {
       const parsed = JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
-      globalThis.__tringloDatabaseCache = {
-        leads: Array.isArray(parsed.leads) ? parsed.leads : [],
-        callRecords: Array.isArray(parsed.callRecords) ? parsed.callRecords : [],
-        followUps: Array.isArray(parsed.followUps) ? parsed.followUps : [],
-        rawEvents: Array.isArray(parsed.rawEvents) ? parsed.rawEvents : [],
-        webhookReceipts: Array.isArray(parsed.webhookReceipts) ? parsed.webhookReceipts : [],
-        agentConfig: parsed.agentConfig ?? null,
-        callingWindow: parsed.callingWindow ?? null,
-        webhookBaseUrl: parsed.webhookBaseUrl ?? null,
-        webhookDelivery: parsed.webhookDelivery ?? null,
-        // Absent in databases written before authentication existed; an empty
-        // list is the correct reading of "no accounts yet".
-        tenants: Array.isArray(parsed.tenants) ? parsed.tenants : [],
-        users: Array.isArray(parsed.users) ? parsed.users : [],
-        sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
-        legacyTenantId: parsed.legacyTenantId ?? null,
-        customerProfiles: Array.isArray(parsed.customerProfiles) ? parsed.customerProfiles : [],
-        memoryItems: Array.isArray(parsed.memoryItems) ? parsed.memoryItems : [],
-        passwordResets: Array.isArray(parsed.passwordResets) ? parsed.passwordResets : [],
-        emailChanges: Array.isArray(parsed.emailChanges) ? parsed.emailChanges : [],
-        campaignRuns: Array.isArray(parsed.campaignRuns) ? parsed.campaignRuns : [],
-        inboundSettings: Array.isArray(parsed.inboundSettings) ? parsed.inboundSettings : [],
-        notificationSettings: Array.isArray(parsed.notificationSettings)
-          ? parsed.notificationSettings
-          : [],
-        providerConfigs: Array.isArray(parsed.providerConfigs) ? parsed.providerConfigs : [],
-        workspaceProfiles: Array.isArray(parsed.workspaceProfiles) ? parsed.workspaceProfiles : [],
-        memberships: Array.isArray(parsed.memberships) ? parsed.memberships : [],
-        doctors: Array.isArray(parsed.doctors) ? parsed.doctors : [],
-        appointments: Array.isArray(parsed.appointments) ? parsed.appointments : [],
-        appointmentEvents: Array.isArray(parsed.appointmentEvents) ? parsed.appointmentEvents : [],
-        reminders: Array.isArray(parsed.reminders) ? parsed.reminders : [],
-        hospitalFaqs: Array.isArray(parsed.hospitalFaqs) ? parsed.hospitalFaqs : [],
-        hospitalProfiles: Array.isArray(parsed.hospitalProfiles) ? parsed.hospitalProfiles : [],
-        hospitalAudit: Array.isArray(parsed.hospitalAudit) ? parsed.hospitalAudit : [],
-        questionnaireSessions: Array.isArray(parsed.questionnaireSessions) ? parsed.questionnaireSessions : [],
-        medicalHistories: Array.isArray(parsed.medicalHistories) ? parsed.medicalHistories : [],
-        historyReports: Array.isArray(parsed.historyReports) ? parsed.historyReports : [],
-        visitNotes: Array.isArray(parsed.visitNotes) ? parsed.visitNotes : [],
-        hospitalFollowUps: Array.isArray(parsed.hospitalFollowUps) ? parsed.hospitalFollowUps : [],
-        unansweredInquiries: Array.isArray(parsed.unansweredInquiries) ? parsed.unansweredInquiries : [],
-        cancellationRequests: Array.isArray(parsed.cancellationRequests) ? parsed.cancellationRequests : [],
-        hisPatients: Array.isArray(parsed.hisPatients) ? parsed.hisPatients : [],
-        providerDirectories: Array.isArray(parsed.providerDirectories) ? parsed.providerDirectories : [],
-      };
+      globalThis.__tringloDatabaseCache = normalizeParsed(parsed);
       return globalThis.__tringloDatabaseCache;
     } catch (err) {
       console.error("[Database] data/database.json is unreadable, starting empty:", err);
@@ -391,9 +349,59 @@ function readDb(): DatabaseSchema {
   return globalThis.__tringloDatabaseCache;
 }
 
+/** Fills every collection from a parsed blob, defaulting anything missing. */
+function normalizeParsed(parsed: Record<string, unknown>): DatabaseSchema {
+  const arr = (v: unknown) => (Array.isArray(v) ? v : []);
+  return {
+    leads: arr(parsed.leads),
+    callRecords: arr(parsed.callRecords),
+    followUps: arr(parsed.followUps),
+    rawEvents: arr(parsed.rawEvents),
+    webhookReceipts: arr(parsed.webhookReceipts),
+    agentConfig: parsed.agentConfig ?? null,
+    callingWindow: parsed.callingWindow ?? null,
+    webhookBaseUrl: parsed.webhookBaseUrl ?? null,
+    webhookDelivery: parsed.webhookDelivery ?? null,
+    // Absent in databases written before authentication existed; an empty
+    // list is the correct reading of "no accounts yet".
+    tenants: arr(parsed.tenants),
+    users: arr(parsed.users),
+    sessions: arr(parsed.sessions),
+    legacyTenantId: parsed.legacyTenantId ?? null,
+    customerProfiles: arr(parsed.customerProfiles),
+    memoryItems: arr(parsed.memoryItems),
+    passwordResets: arr(parsed.passwordResets),
+    emailChanges: arr(parsed.emailChanges),
+    campaignRuns: arr(parsed.campaignRuns),
+    inboundSettings: arr(parsed.inboundSettings),
+    notificationSettings: arr(parsed.notificationSettings),
+    providerConfigs: arr(parsed.providerConfigs),
+    workspaceProfiles: arr(parsed.workspaceProfiles),
+    memberships: arr(parsed.memberships),
+    doctors: arr(parsed.doctors),
+    appointments: arr(parsed.appointments),
+    appointmentEvents: arr(parsed.appointmentEvents),
+    reminders: arr(parsed.reminders),
+    hospitalFaqs: arr(parsed.hospitalFaqs),
+    hospitalProfiles: arr(parsed.hospitalProfiles),
+    hospitalAudit: arr(parsed.hospitalAudit),
+    questionnaireSessions: arr(parsed.questionnaireSessions),
+    medicalHistories: arr(parsed.medicalHistories),
+    historyReports: arr(parsed.historyReports),
+    visitNotes: arr(parsed.visitNotes),
+    hospitalFollowUps: arr(parsed.hospitalFollowUps),
+    unansweredInquiries: arr(parsed.unansweredInquiries),
+    cancellationRequests: arr(parsed.cancellationRequests),
+    hisPatients: arr(parsed.hisPatients),
+    providerDirectories: arr(parsed.providerDirectories),
+  } as DatabaseSchema;
+}
+
 /**
  * Writes through a temp file so a crash mid-write cannot leave a truncated
  * database behind — the in-flight call state is the only copy Tringlo has.
+ * When an external store is configured, the blob is also flushed there (the
+ * local file is just an ephemeral cache on a disk-less host).
  */
 function writeDb(data: DatabaseSchema) {
   globalThis.__tringloDatabaseCache = data;
@@ -404,6 +412,78 @@ function writeDb(data: DatabaseSchema) {
     fs.renameSync(tmp, DB_FILE);
   } catch (err) {
     console.error("[Database] Error writing database.json:", err);
+  }
+  scheduleBlobFlush();
+}
+
+// ------------------------------------------------------------
+// External blob persistence (enabled only when a store is configured)
+// ------------------------------------------------------------
+
+let blobLoaded = false;
+let flushing = false;
+let flushDirty = false;
+
+/** Flush the whole database to the external store, coalescing rapid writes. */
+function scheduleBlobFlush(): void {
+  if (!blobLoaded || !isBlobConfigured()) return;
+  flushDirty = true;
+  if (flushing) return;
+  flushing = true;
+  void (async () => {
+    try {
+      do {
+        flushDirty = false;
+        await saveBlob(JSON.stringify(globalThis.__tringloDatabaseCache));
+      } while (flushDirty);
+    } catch (err) {
+      console.error("[Database] blob flush failed:", err instanceof Error ? err.message : err);
+    } finally {
+      flushing = false;
+    }
+  })();
+}
+
+/**
+ * Loads the database from the external store at boot, once, before any request
+ * is served. A no-op when no store is configured (the local file is used).
+ * Call this from instrumentation before migrations run.
+ */
+export async function initDatabase(): Promise<void> {
+  if (!isBlobConfigured() || blobLoaded) return;
+  try {
+    const raw = await loadBlob();
+    if (raw) {
+      globalThis.__tringloDatabaseCache = withAllCollections(normalizeParsed(JSON.parse(raw)));
+      cacheChecked = true;
+      console.log(`[Database] loaded from external store (${blobTarget()})`);
+    } else {
+      // First boot against an empty store: seed it with whatever is local.
+      const current = readDb();
+      blobLoaded = true;
+      await saveBlob(JSON.stringify(current));
+      console.log(`[Database] seeded external store (${blobTarget()})`);
+      registerBlobShutdownFlush();
+      return;
+    }
+    blobLoaded = true;
+    registerBlobShutdownFlush();
+  } catch (err) {
+    // A store that cannot be reached must not take the whole app down; fall
+    // back to the local file and say so loudly.
+    console.error("[Database] external store init failed — using local file:", err instanceof Error ? err.message : err);
+  }
+}
+
+let shutdownFlushRegistered = false;
+function registerBlobShutdownFlush(): void {
+  if (shutdownFlushRegistered) return;
+  shutdownFlushRegistered = true;
+  for (const signal of ["SIGTERM", "SIGINT"] as const) {
+    process.once(signal, () => {
+      // Best effort: give the latest state one last push before the host sleeps.
+      void saveBlob(JSON.stringify(globalThis.__tringloDatabaseCache)).catch(() => {});
+    });
   }
 }
 

@@ -1,31 +1,40 @@
 # ============================================================
-# Render blueprint — a stable public host for Tringlo AI
+# Render blueprint — Tringlo AI on the FREE plan
 # ============================================================
-# One always-on web service (a persistent container, NOT serverless) with a
-# persistent disk for the database. numInstances is pinned to 1 on purpose: the
-# process owns the JSON database cache, so the service must never scale out.
+# Free web services have NO persistent disk and spin down after ~15 min idle,
+# so the database is NOT kept on the local file here. Instead it is mirrored to
+# a free external key-value store (Upstash Redis / Vercel KV — same REST wire
+# format) set via TRINGLO_DB_REST_URL + TRINGLO_DB_REST_TOKEN. With those set,
+# data survives restarts and redeploys. Without them the app would lose all
+# data on every spin-down, so DO NOT deploy free without configuring the store.
 #
-# After deploy, set the env vars marked `sync: false` in the Render dashboard
-# (never commit them). WEBHOOK_BASE_URL is the service's own https URL — this is
-# the stable address Sarvam's tool calls, inbound and outbound webhooks all use.
+# Caveats of the free plan (unavoidable, not bugs): the service sleeps after
+# ~15 min of inactivity, so the first request after idle cold-starts (slow) and
+# the in-process scheduler pauses while asleep. A free uptime pinger hitting the
+# health path keeps it warm.
+#
+# Set every env var marked `sync: false` in the Render dashboard; never commit
+# secrets. WEBHOOK_BASE_URL is this service's own https URL.
 # ============================================================
 services:
   - type: web
     name: tringlo
     runtime: docker
-    plan: starter
+    plan: free
     numInstances: 1
     healthCheckPath: /api/webhooks/sarvam/outbound
-    disk:
-      name: tringlo-data
-      mountPath: /app/data
-      sizeGB: 1
     envVars:
       # The stable public https URL of THIS service (e.g. https://tringlo.onrender.com).
       - key: WEBHOOK_BASE_URL
         sync: false
       - key: NODE_ENV
         value: production
+      # External database (free, persistent). Required on the free plan.
+      # From an Upstash Redis database (REST) or a Vercel KV store.
+      - key: TRINGLO_DB_REST_URL
+        sync: false
+      - key: TRINGLO_DB_REST_TOKEN
+        sync: false
       # Sarvam — set in the dashboard, never in Git.
       - key: SARVAM_API_KEY
         sync: false

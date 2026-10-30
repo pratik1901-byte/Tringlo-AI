@@ -21,6 +21,13 @@ export async function register() {
   // The panel says so for itself, in its own next.config.
   if (process.env.TRINGLO_ROLE === "panel") return;
 
+  // Load the database from the external store (when one is configured) before
+  // anything reads or writes it. On a disk-less free host this is the only
+  // durable copy; with no store configured it is a no-op and the local file is
+  // used. Awaited here so the cache is populated before the first request.
+  const { initDatabase } = await import("./lib/db");
+  await initDatabase();
+
   // Moves the original single-workspace configuration onto its workspace.
   // Guarded, so running it again changes nothing.
   const { runStartupMigrations } = await import("./lib/db/migrations");
