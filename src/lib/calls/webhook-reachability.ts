@@ -57,7 +57,7 @@ export async function checkWebhookReachable(webhookBaseUrl: string): Promise<Rea
       // Confirms we reached *this* app, not a tunnel landing page or a stale
       // deployment that happens to return 200 for anything.
       result =
-        body?.service === "dialo-sarvam-webhook"
+        body?.service === "tringlo-sarvam-webhook"
           ? { reachable: true, url, detail: "Call results can reach Tringlo." }
           : {
               reachable: false,

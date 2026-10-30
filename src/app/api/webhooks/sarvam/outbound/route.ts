@@ -129,5 +129,5 @@ export async function POST(request: NextRequest) {
  * Carries no data and needs no token.
  */
 export function GET() {
-  return NextResponse.json({ service: "dialo-sarvam-webhook", ready: true });
+  return NextResponse.json({ service: "tringlo-sarvam-webhook", ready: true });
 }

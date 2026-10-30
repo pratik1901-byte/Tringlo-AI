@@ -10,7 +10,7 @@
 // leads, calls, follow-ups and customer memory.
 //
 // It is not a public sign-up route: it is reachable only from a browser on the
-// server machine, or with DIALO_INTERNAL_SECRET. A publicly tunnelled dev
+// server machine, or with TRINGLO_INTERNAL_SECRET. A publicly tunnelled dev
 // server therefore cannot have accounts created by whoever finds the URL.
 //
 // Everything already in the database — the real leads, calls and follow-ups —
@@ -74,12 +74,12 @@ export async function POST(request: Request) {
   //     with local access to the machine could read the database anyway, so
   //     requiring a secret here protects nothing and only makes first run
   //     impossible until one is invented.
-  //   - From anywhere, with DIALO_INTERNAL_SECRET. This is the path for a
+  //   - From anywhere, with TRINGLO_INTERNAL_SECRET. This is the path for a
   //     deployed server, where nobody is sitting at the machine.
   //
   // A request forwarded by the Cloudflare tunnel is never treated as local.
-  const expected = (process.env.DIALO_INTERNAL_SECRET || "").trim();
-  const provided = (request.headers.get("x-dialo-internal-secret") || "").trim();
+  const expected = (process.env.TRINGLO_INTERNAL_SECRET || "").trim();
+  const provided = (request.headers.get("x-tringlo-internal-secret") || "").trim();
   const hasSecret = Boolean(expected) && Boolean(provided) && secretMatches(provided, expected);
 
   // Unchanged, and deliberately so: this endpoint creates the *first* account,

@@ -27,15 +27,15 @@ export function isMailConfigured(): boolean {
 }
 
 declare global {
-  var __dialoMailer: Transporter | undefined;
+  var __tringloMailer: Transporter | undefined;
 }
 
 /** One transport per process, so connections are pooled rather than reopened per mail. */
 function transport(): Transporter {
-  if (globalThis.__dialoMailer) return globalThis.__dialoMailer;
+  if (globalThis.__tringloMailer) return globalThis.__tringloMailer;
 
   const port = Number(env("SMTP_PORT")) || 465;
-  globalThis.__dialoMailer = nodemailer.createTransport({
+  globalThis.__tringloMailer = nodemailer.createTransport({
     host: env("SMTP_HOST"),
     port,
     // 465 is implicit TLS; 587 upgrades with STARTTLS. Either way the
@@ -51,7 +51,7 @@ function transport(): Transporter {
     pool: true,
     maxConnections: 2,
   });
-  return globalThis.__dialoMailer;
+  return globalThis.__tringloMailer;
 }
 
 export interface MailMessage {

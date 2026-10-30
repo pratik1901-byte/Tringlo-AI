@@ -3,7 +3,7 @@
 process.env.SARVAM_API_KEY = "platform-key";
 process.env.SARVAM_ORG_ID = "org";
 process.env.SARVAM_WORKSPACE_ID = "sarvam-ws";
-process.env.DIALO_WEBHOOK_TOKEN = "g".repeat(32); // the retired global token
+process.env.TRINGLO_WEBHOOK_TOKEN = "g".repeat(32); // the retired global token
 
 const deployments: Record<string, string> = {};
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -42,7 +42,7 @@ const now = new Date().toISOString();
 const A = "ws_a", B = "ws_b";
 const PHONE_A = "+919800000001", PHONE_B = "+919700000002";
 
-db.saveWebhookBaseUrl("https://dialo.example.com");
+db.saveWebhookBaseUrl("https://tringlo.example.com");
 for (const [id, name] of [[A, "TenWeb"], [B, "BrightPath"]]) db.saveTenant({ id, name, createdAt: now });
 db.saveAgentConfig(A, { companyName: "TenWeb", productName: "KhushiBot", agentName: "Priya" });
 db.saveAgentConfig(B, { companyName: "BrightPath", productName: "RouteSense", agentName: "Arjun" });
@@ -72,7 +72,7 @@ const okRes = await hook(tokenA, { deployment_id: depA, user_phone_number: PHONE
 const okJson = await okRes.json();
 check("Valid workspace token → accepted", okRes.status === 200, okRes.status);
 check("Wrong workspace token → rejected", (await hook(tokenB, { deployment_id: depA, user_phone_number: PHONE_A })).status === 404);
-check("Retired global token → rejected", (await hook(process.env.DIALO_WEBHOOK_TOKEN!, { deployment_id: depA, user_phone_number: PHONE_A })).status === 401);
+check("Retired global token → rejected", (await hook(process.env.TRINGLO_WEBHOOK_TOKEN!, { deployment_id: depA, user_phone_number: PHONE_A })).status === 401);
 check("No token → rejected", (await hook(null, { deployment_id: depA, user_phone_number: PHONE_A })).status === 401);
 check("Unknown deployment → rejected", (await hook(tokenA, { deployment_id: "dep-nope", user_phone_number: PHONE_A })).status === 404);
 check("Made-up token → rejected", (await hook("ws_" + "0".repeat(48), { deployment_id: depA, user_phone_number: PHONE_A })).status === 401);
@@ -100,7 +100,7 @@ check("A cannot ask about B's line", (await hook(tokenA, { deployment_id: depB, 
 
 console.log("\n=== Secrets ===");
 const everything = JSON.stringify([okJson, unknown, bAsksForOwn, crossed]);
-check("No token in any response", !everything.includes(tokenA) && !everything.includes(tokenB) && !everything.includes(process.env.DIALO_WEBHOOK_TOKEN!));
+check("No token in any response", !everything.includes(tokenA) && !everything.includes(tokenB) && !everything.includes(process.env.TRINGLO_WEBHOOK_TOKEN!));
 check("No API key in any response", !everything.includes("platform-key"));
 
 console.log(`\n${pass}/${pass + fail} checks passed`);

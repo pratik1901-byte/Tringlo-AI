@@ -13,7 +13,7 @@
 process.env.SARVAM_API_KEY = "platform-key";
 process.env.SARVAM_ORG_ID = "org";
 process.env.SARVAM_WORKSPACE_ID = "sarvam-ws";
-process.env.DIALO_WEBHOOK_TOKEN = "s".repeat(32);
+process.env.TRINGLO_WEBHOOK_TOKEN = "s".repeat(32);
 process.env.ALLOW_CALLS_WITHOUT_WEBHOOK = "true";
 
 // ---------------- simulated Sarvam ----------------
@@ -97,7 +97,7 @@ const now = new Date().toISOString();
 const A = "ws_tenweb", B = "ws_brightpath";
 db.saveTenant({ id: A, name: "TenWeb", createdAt: now });
 db.saveTenant({ id: B, name: "BrightPath Logistics", createdAt: now });
-db.saveWebhookBaseUrl("https://dialo.example.com");
+db.saveWebhookBaseUrl("https://tringlo.example.com");
 
 const auth = (tenantId: string, token: string) => {
   const userId = `user_${tenantId}`;
@@ -175,7 +175,7 @@ check("Mid-call RAG with A's token returns A's knowledge", ragAsA.status === 200
 const forgedRag = await ragReq(providerConfigFor(A)!.webhookToken, { query: "what is the product", company_id: B, company_name: "BrightPath Logistics", tenant_id: B });
 const forgedRagJson = await forgedRag.json();
 check("A body claiming to be B is ignored — still A's knowledge", !/RouteSense|BrightPath/.test(JSON.stringify(forgedRagJson)), JSON.stringify(forgedRagJson).slice(0, 160));
-check("The server-wide token cannot read any workspace's knowledge", (await ragReq(process.env.DIALO_WEBHOOK_TOKEN!, { query: "product" })).status === 401);
+check("The server-wide token cannot read any workspace's knowledge", (await ragReq(process.env.TRINGLO_WEBHOOK_TOKEN!, { query: "product" })).status === 401);
 check("No token at all is refused", (await ragReq(null, { query: "product" })).status === 401);
 
 // ================= 4. inbound routing =================
@@ -275,12 +275,12 @@ check("A's token reads A's caller context", rightLine.status === 200 && !/Bright
 console.log("\n=== Secrets ===");
 const allResponses = JSON.stringify([provA, profileA, recordsA, contactsA, metricsA, inboundA, customersA, ragAsAJson]);
 check("No API key in any API response", !allResponses.includes("platform-key"));
-check("No webhook token in any API response", !allResponses.includes(providerConfigFor(A)!.webhookToken) && !allResponses.includes(process.env.DIALO_WEBHOOK_TOKEN!));
+check("No webhook token in any API response", !allResponses.includes(providerConfigFor(A)!.webhookToken) && !allResponses.includes(process.env.TRINGLO_WEBHOOK_TOKEN!));
 check("No Sarvam org or workspace id in any API response", !allResponses.includes("sarvam-ws"));
 
 // ================= 10. the six verification fixes =================
 console.log("\n=== Retired global webhook token ===");
-const globalTokenPost = await webhookRoute.POST(new NextRequest(`http://localhost/api/webhooks/sarvam/inbound?k=${process.env.DIALO_WEBHOOK_TOKEN}`, { method: "POST", body: JSON.stringify(inboundCall(depA, "int-globaltoken", "+919800000001")), headers: { "content-type": "application/json" } }) as never);
+const globalTokenPost = await webhookRoute.POST(new NextRequest(`http://localhost/api/webhooks/sarvam/inbound?k=${process.env.TRINGLO_WEBHOOK_TOKEN}`, { method: "POST", body: JSON.stringify(inboundCall(depA, "int-globaltoken", "+919800000001")), headers: { "content-type": "application/json" } }) as never);
 check("The old server-wide token is refused", globalTokenPost.status === 401 && !db.getCallRecordByAttemptId("int-globaltoken"), globalTokenPost.status);
 check("A workspace token is still accepted", Boolean(db.getCallRecordByAttemptId("int-a1")));
 
@@ -306,8 +306,8 @@ check("An unmappable delivery is assigned to no workspace", unmappable.length > 
 console.log("\n=== Deployment ID is an explicit override ===");
 const beforeDeployment = db.getInboundSettings(B)!.deploymentId;
 const draft = { phoneNumber: "+918064269194", startTime: "00:00", endTime: "23:59", days: ["Monday"] as never, timezone: "Asia/Kolkata", handoffNumber: null, afterHoursMessage: null };
-const pasted = inbound.saveInboundDraft(A, { ...draft, deploymentId: "Dialo-AI-pasted-1234" });
-check("An administrator can paste a deployment ID", pasted.ok && db.getInboundSettings(A)!.deploymentId === "Dialo-AI-pasted-1234", pasted.problems);
+const pasted = inbound.saveInboundDraft(A, { ...draft, deploymentId: "Tringlo-AI-pasted-1234" });
+check("An administrator can paste a deployment ID", pasted.ok && db.getInboundSettings(A)!.deploymentId === "Tringlo-AI-pasted-1234", pasted.problems);
 check("…it touches only that workspace", db.getInboundSettings(B)!.deploymentId === beforeDeployment);
 check("…and its status is re-checked rather than assumed live", db.getInboundSettings(A)!.deploymentStatus === "creating" && db.getInboundSettings(A)!.webhookUrl === null);
 const stolen = inbound.saveInboundDraft(A, { ...draft, deploymentId: beforeDeployment! });
@@ -315,7 +315,7 @@ check("A deployment already serving another workspace is refused", !stolen.ok &&
 const malformed = inbound.saveInboundDraft(A, { ...draft, deploymentId: "no spaces allowed!" });
 check("A malformed deployment ID is refused", !malformed.ok, malformed.problems);
 const untouched = inbound.saveInboundDraft(A, draft);
-check("Saving without the field leaves the deployment alone", untouched.ok && db.getInboundSettings(A)!.deploymentId === "Dialo-AI-pasted-1234");
+check("Saving without the field leaves the deployment alone", untouched.ok && db.getInboundSettings(A)!.deploymentId === "Tringlo-AI-pasted-1234");
 const cleared = inbound.saveInboundDraft(A, { ...draft, deploymentId: "" });
 check("Clearing it hands management back to Tringlo", cleared.ok && db.getInboundSettings(A)!.deploymentId === null);
 // Put A's real deployment back for anything after this.

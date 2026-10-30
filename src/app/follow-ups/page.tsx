@@ -5,7 +5,7 @@ import { CalendarClock, Plus, RefreshCw, X } from "lucide-react";
 
 import type { FollowUp, Lead } from "@/lib/types";
 import { useAgentConfigStore } from "@/lib/store";
-import { useFollowUps } from "@/lib/use-dialo-data";
+import { useFollowUps } from "@/lib/use-tringlo-data";
 import { useNow } from "@/lib/use-now";
 import { useModalEntrance, useReveal } from "@/lib/animation";
 import {

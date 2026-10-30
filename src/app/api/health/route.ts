@@ -146,7 +146,7 @@ export async function GET(request: NextRequest) {
     checks.push({
       name: "outbound",
       state: "warn",
-      detail: "Outbound calling is disabled by DIALO_BLOCK_OUTBOUND_CALLS.",
+      detail: "Outbound calling is disabled by TRINGLO_BLOCK_OUTBOUND_CALLS.",
     });
   }
 

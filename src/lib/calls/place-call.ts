@@ -68,7 +68,7 @@ export type PlaceCallResult = PlaceCallSuccess | PlaceCallFailed;
 /**
  * Hard stop on every outbound call.
  *
- * Set DIALO_BLOCK_OUTBOUND_CALLS=true and no call can reach the provider, whatever
+ * Set TRINGLO_BLOCK_OUTBOUND_CALLS=true and no call can reach the provider, whatever
  * else is configured. This exists because test isolation used to depend on
  * pointing the webhook URL somewhere unreachable — and once the URL moved into
  * the database, that indirect trick stopped working and test runs dialled real
@@ -76,7 +76,7 @@ export type PlaceCallResult = PlaceCallSuccess | PlaceCallFailed;
  * rather than something it achieves as a side effect.
  */
 export function outboundCallsBlocked(): boolean {
-  return process.env.DIALO_BLOCK_OUTBOUND_CALLS === "true";
+  return process.env.TRINGLO_BLOCK_OUTBOUND_CALLS === "true";
 }
 
 /** The registered URL wins; the caller's value is the fallback. */
@@ -123,10 +123,10 @@ function fail(
 export async function placeCall(input: PlaceCallInput): Promise<PlaceCallResult> {
   // Checked first, before anything can reach the provider.
   if (outboundCallsBlocked()) {
-    console.warn("[Tringlo] Outbound calls are blocked by DIALO_BLOCK_OUTBOUND_CALLS.");
+    console.warn("[Tringlo] Outbound calls are blocked by TRINGLO_BLOCK_OUTBOUND_CALLS.");
     return fail(
       "outbound_blocked",
-      "Outbound calling is disabled on this server (DIALO_BLOCK_OUTBOUND_CALLS).",
+      "Outbound calling is disabled on this server (TRINGLO_BLOCK_OUTBOUND_CALLS).",
       503
     );
   }

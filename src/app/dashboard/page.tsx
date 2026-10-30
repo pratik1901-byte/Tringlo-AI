@@ -15,7 +15,7 @@ import {
 } from "recharts";
 
 import { useAuthStore } from "@/lib/store";
-import { useCallRecords, useMetrics } from "@/lib/use-dialo-data";
+import { useCallRecords, useMetrics } from "@/lib/use-tringlo-data";
 import { useNow } from "@/lib/use-now";
 import { useReveal } from "@/lib/animation";
 import {

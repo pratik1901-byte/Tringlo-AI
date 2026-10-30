@@ -294,7 +294,7 @@ function emptyDb(): DatabaseSchema {
 }
 
 declare global {
-  var __dialoDatabaseCache: DatabaseSchema | undefined;
+  var __tringloDatabaseCache: DatabaseSchema | undefined;
 }
 
 function ensureDataDir() {
@@ -322,12 +322,12 @@ function withAllCollections(db: DatabaseSchema): DatabaseSchema {
 }
 
 function readDb(): DatabaseSchema {
-  if (globalThis.__dialoDatabaseCache) {
+  if (globalThis.__tringloDatabaseCache) {
     if (!cacheChecked) {
-      withAllCollections(globalThis.__dialoDatabaseCache);
+      withAllCollections(globalThis.__tringloDatabaseCache);
       cacheChecked = true;
     }
-    return globalThis.__dialoDatabaseCache;
+    return globalThis.__tringloDatabaseCache;
   }
 
   ensureDataDir();
@@ -335,7 +335,7 @@ function readDb(): DatabaseSchema {
   if (fs.existsSync(DB_FILE)) {
     try {
       const parsed = JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
-      globalThis.__dialoDatabaseCache = {
+      globalThis.__tringloDatabaseCache = {
         leads: Array.isArray(parsed.leads) ? parsed.leads : [],
         callRecords: Array.isArray(parsed.callRecords) ? parsed.callRecords : [],
         followUps: Array.isArray(parsed.followUps) ? parsed.followUps : [],
@@ -380,15 +380,15 @@ function readDb(): DatabaseSchema {
         hisPatients: Array.isArray(parsed.hisPatients) ? parsed.hisPatients : [],
         providerDirectories: Array.isArray(parsed.providerDirectories) ? parsed.providerDirectories : [],
       };
-      return globalThis.__dialoDatabaseCache;
+      return globalThis.__tringloDatabaseCache;
     } catch (err) {
       console.error("[Database] data/database.json is unreadable, starting empty:", err);
     }
   }
 
-  globalThis.__dialoDatabaseCache = emptyDb();
-  writeDb(globalThis.__dialoDatabaseCache);
-  return globalThis.__dialoDatabaseCache;
+  globalThis.__tringloDatabaseCache = emptyDb();
+  writeDb(globalThis.__tringloDatabaseCache);
+  return globalThis.__tringloDatabaseCache;
 }
 
 /**
@@ -396,7 +396,7 @@ function readDb(): DatabaseSchema {
  * database behind — the in-flight call state is the only copy Tringlo has.
  */
 function writeDb(data: DatabaseSchema) {
-  globalThis.__dialoDatabaseCache = data;
+  globalThis.__tringloDatabaseCache = data;
   try {
     ensureDataDir();
     const tmp = `${DB_FILE}.tmp`;

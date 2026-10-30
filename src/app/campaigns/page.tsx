@@ -6,7 +6,7 @@ import { useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, FileSpreadsheet, Loader2, Megaphone, Plus, Upload } from "lucide-react";
 
 import { EmptyState, ErrorState, PageHeader, SkeletonBlock, Tag } from "@/components/ui/data-display";
-import { useApi } from "@/lib/use-dialo-data";
+import { useApi } from "@/lib/use-tringlo-data";
 import { useAuthStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { STATUS_LABEL, STATUS_TONE, type CampaignStatsView, type CampaignStatus } from "@/components/campaigns/shared";

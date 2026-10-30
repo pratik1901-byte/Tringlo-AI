@@ -6,7 +6,7 @@ import { ArrowDownLeft, ArrowUpRight, ChevronDown, ClipboardList, Download, Phon
 import type { ContactSummary } from "@/lib/contacts";
 import { callDirection, type CallRecord } from "@/lib/types";
 import { useAgentConfigStore } from "@/lib/store";
-import { useApi } from "@/lib/use-dialo-data";
+import { useApi } from "@/lib/use-tringlo-data";
 import { useNow } from "@/lib/use-now";
 import { useModalEntrance, useReveal } from "@/lib/animation";
 import { exportToCSV } from "@/lib/csv-utils";
@@ -161,7 +161,7 @@ export default function ResultsPage() {
         "Follow-up": followUpText(contact.followUpAt),
         "Do not call": contact.suppressed ? "Yes" : "No",
       })),
-      `dialo_contacts_${new Date().toISOString().split("T")[0]}.csv`
+      `tringlo_contacts_${new Date().toISOString().split("T")[0]}.csv`
     );
   };
 
@@ -194,7 +194,7 @@ export default function ResultsPage() {
           "Next action": formatLabel(record.nextAction),
           "Attempt ID": record.providerAttemptId ?? EMPTY,
         })),
-        `dialo_calls_${new Date().toISOString().split("T")[0]}.csv`
+        `tringlo_calls_${new Date().toISOString().split("T")[0]}.csv`
       );
     } catch {
       setExportError("The calls could not be exported. Try again.");

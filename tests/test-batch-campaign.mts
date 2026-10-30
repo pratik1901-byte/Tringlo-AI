@@ -60,7 +60,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       cohort_id: `${payload.name}-abc123`,
       status: "completed",
       source_type: "file_upload",
-      created_by: "dialo",
+      created_by: "tringlo",
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       result: { total_records: payload.users.length, valid_records: payload.users.length, rejected_records: 0 },
@@ -104,7 +104,7 @@ const inTenDays = new Date(Date.now() + 10 * 864e5).toISOString();
 const A = "ws_alpha", B = "ws_beta";
 db.saveTenant({ id: A, name: "Alpha Finance", createdAt: now });
 db.saveTenant({ id: B, name: "Beta Logistics", createdAt: now });
-db.saveWebhookBaseUrl("https://dialo.example.com");
+db.saveWebhookBaseUrl("https://tringlo.example.com");
 
 const batchFor = (tag: string) => ({
   appId: `Agent-${tag}-batch`, appVersion: 3, appType: "agent",
@@ -162,7 +162,7 @@ check("The create request carried A's agent and version", createBody.app_config.
 check("…A's connection and number pool", createBody.app_config.connection_configs[0].connection_id === "conn-A-batch" && createBody.app_config.connection_configs[0].phone_numbers[0] === "+918000000011");
 check("…the chosen rate, retries and schedule", createBody.app_config.attempts_per_second === 2 && createBody.app_config.retry_config.max_retries === 2 && createBody.allowed_schedule.allowed_start_time === "10:00");
 check("…and A's own webhook token, not a shared one", String(createHook.url).includes(providerConfigFor(A)!.webhookToken));
-check("The webhook names the workspace, so results come home", createHook.metadata?.dialo_tenant_id === A);
+check("The webhook names the workspace, so results come home", createHook.metadata?.tringlo_tenant_id === A);
 
 const streamCall = hits.find((h) => /\/cohorts\/stream$/.test(h.url))!;
 check("The leads went through Stream cohort, the documented API route", Boolean(streamCall));

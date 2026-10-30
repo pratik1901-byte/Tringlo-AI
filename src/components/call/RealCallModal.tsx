@@ -44,7 +44,7 @@ import {
   formatOutcome,
   formatText,
 } from "@/lib/format";
-import { useCallWatch, type ReachabilityHistory } from "@/lib/use-dialo-data";
+import { useCallWatch, type ReachabilityHistory } from "@/lib/use-tringlo-data";
 import { useModalEntrance, useStateTransition } from "@/lib/animation";
 import { Field, StatusBadge, Tag } from "@/components/ui/data-display";
 import { TranscriptView } from "@/components/call/TranscriptView";

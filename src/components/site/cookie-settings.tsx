@@ -50,12 +50,12 @@ export function CookieSettingsButton({ className }: { className?: string }) {
             </thead>
             <tbody className="text-ink-muted">
               <tr className="border-b border-stone align-top">
-                <td className="py-2.5 pr-3 font-mono text-[12px] text-ink">dialo_session</td>
+                <td className="py-2.5 pr-3 font-mono text-[12px] text-ink">tringlo_session</td>
                 <td className="py-2.5 pr-3">Keeps you signed in. Set only when you log in. Strictly necessary.</td>
                 <td className="py-2.5">Up to 30 days, or until you sign out</td>
               </tr>
               <tr className="align-top">
-                <td className="py-2.5 pr-3 font-mono text-[12px] text-ink">dialo-theme</td>
+                <td className="py-2.5 pr-3 font-mono text-[12px] text-ink">tringlo-theme</td>
                 <td className="py-2.5 pr-3">Remembers light or dark mode inside the app (browser storage, not a cookie).</td>
                 <td className="py-2.5">Until you clear it</td>
               </tr>

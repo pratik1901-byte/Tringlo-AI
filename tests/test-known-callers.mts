@@ -77,7 +77,7 @@ const CREATE_DEPLOYMENT = `curl --location '${S}/app-authoring/v1/orgs/org-123/w
   "connection_configs":[{"connection_id":"conn-in","phone_numbers":["+918064269194"]}],
   "inbound_config":{"start_time":"09:00:00","end_time":"18:00:00","allowed_days":["Monday"],"timezone":"Asia/Kolkata"},
   "webhook_config":{"url":"https://example.com/in"}}'`;
-const KNOWN_CALLERS = `curl --location '${S}/scheduling/v1/orgs/org-123/workspaces/ws-123/deployments/Dialo-AI-9f3c21aa-77be/cohorts/stream' \\
+const KNOWN_CALLERS = `curl --location '${S}/scheduling/v1/orgs/org-123/workspaces/ws-123/deployments/Tringlo-AI-9f3c21aa-77be/cohorts/stream' \\
 --header 'X-API-Key: sk_live_SECRET' \\
 --data '{"name":"known-callers","users":[
   {"user_phone_number":"+919800000001","user_identifier":"cust-1","app_variables":{"customer_name":"Asha"}},
@@ -96,7 +96,7 @@ section("Known-Caller List, its own operation");
 const known = parseSarvamSnippet("known_callers", KNOWN_CALLERS);
 check("A valid known-caller example is accepted", known.ok, known.problems);
 check("…and is no longer called an invalid deployment-creation request", !known.problems.some((p) => /Create Deployment endpoint/i.test(p)), known.problems);
-check("The deployment ID is read out of the URL", known.fields.deploymentId === "Dialo-AI-9f3c21aa-77be", known.fields);
+check("The deployment ID is read out of the URL", known.fields.deploymentId === "Tringlo-AI-9f3c21aa-77be", known.fields);
 const recognised = (known.fields.recognisedFields ?? []) as string[];
 check("It reports the fields it understood", recognised.includes("users[].user_phone_number") && recognised.includes("users[].app_variables"), recognised);
 check("…including the identifier and the cohort name", recognised.includes("users[].user_identifier") && recognised.includes("name"), recognised);

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ChevronRight, Moon, Sun } from "lucide-react";
 
 import { useAuthStore } from "@/lib/store";
-import { useProviderStatus } from "@/lib/use-dialo-data";
+import { useProviderStatus } from "@/lib/use-tringlo-data";
 import { LiveClock } from "./live-clock";
 
 /** Where the chosen theme is remembered; read before first paint by the root layout. */

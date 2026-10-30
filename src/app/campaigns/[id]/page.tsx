@@ -8,7 +8,7 @@ import { CallResultPanel } from "@/components/campaigns/call-result-panel";
 import { STATUS_LABEL, STATUS_TONE, type CampaignStatsView, type CampaignStatus } from "@/components/campaigns/shared";
 import { ErrorState, PageHeader, SkeletonBlock, Tag } from "@/components/ui/data-display";
 import { useAuthStore } from "@/lib/store";
-import { useApi } from "@/lib/use-dialo-data";
+import { useApi } from "@/lib/use-tringlo-data";
 import { cn } from "@/lib/utils";
 
 interface Detail {

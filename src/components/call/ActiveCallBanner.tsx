@@ -17,7 +17,7 @@ import { useState } from "react";
 
 import type { CallRecord } from "@/lib/types";
 import { useAgentConfigStore } from "@/lib/store";
-import { useCallRecords } from "@/lib/use-dialo-data";
+import { useCallRecords } from "@/lib/use-tringlo-data";
 import { useNow } from "@/lib/use-now";
 import { RESULT_TIMEOUT_MS } from "@/lib/format";
 import { RealCallModal } from "@/components/call/RealCallModal";

@@ -127,7 +127,7 @@ export async function POST(request: Request) {
     createdAt: new Date(now).toISOString(),
     expiresAt: sessionExpiry(now, remember),
     lastSeenAt: new Date(now).toISOString(),
-    client: request.headers.get("x-dialo-client") === "mobile" ? "mobile" : "web",
+    client: request.headers.get("x-tringlo-client") === "mobile" ? "mobile" : "web",
   });
 
   console.log(`AUTH_LOGIN_OK user=${user.id} workspaces=${memberships.length}`);

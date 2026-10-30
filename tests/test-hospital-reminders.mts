@@ -85,7 +85,7 @@ for (const [id, name] of [[HOSPITAL, "Wellness Hospital"], [NON_HOSPITAL, "TenWe
   db.saveAgentConfig(id, { companyName: name, productName: "Appointments", industry: "Healthcare" });
 }
 enableHospital(HOSPITAL, "Wellness Hospital", "staff_1");
-db.saveWebhookBaseUrl("https://dialo.example.com");
+db.saveWebhookBaseUrl("https://tringlo.example.com");
 
 saveWorkspaceProvider(
   HOSPITAL,

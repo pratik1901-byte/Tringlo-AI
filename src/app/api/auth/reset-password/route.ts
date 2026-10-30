@@ -8,7 +8,7 @@
 // built honestly — a form that claims to send an email that never arrives is
 // worse than no form at all. Recovery therefore uses the same trust model as
 // account creation: it works from a browser on the machine running Tringlo, or
-// with DIALO_INTERNAL_SECRET, and is refused through the public tunnel.
+// with TRINGLO_INTERNAL_SECRET, and is refused through the public tunnel.
 //
 // Resetting a password signs out every existing session for that account. If
 // the reason for the reset was that someone else had the old one, leaving their
@@ -43,8 +43,8 @@ export async function POST(request: Request) {
     return fail(429, "rate_limited", "Too many attempts. Try again later.");
   }
 
-  const expected = (process.env.DIALO_INTERNAL_SECRET || "").trim();
-  const provided = (request.headers.get("x-dialo-internal-secret") || "").trim();
+  const expected = (process.env.TRINGLO_INTERNAL_SECRET || "").trim();
+  const provided = (request.headers.get("x-tringlo-internal-secret") || "").trim();
   const hasSecret = Boolean(expected) && Boolean(provided) && secretMatches(provided, expected);
 
   if (!hasSecret && !isLocalRequest(request)) {

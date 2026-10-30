@@ -53,9 +53,9 @@ const CLOUDFLARED_CANDIDATES = [
   "cloudflared",
 ];
 
-const log = (message) => console.log(`\x1b[36m[dialo]\x1b[0m ${message}`);
-const warn = (message) => console.log(`\x1b[33m[dialo]\x1b[0m ${message}`);
-const fail = (message) => console.log(`\x1b[31m[dialo]\x1b[0m ${message}`);
+const log = (message) => console.log(`\x1b[36m[tringlo]\x1b[0m ${message}`);
+const warn = (message) => console.log(`\x1b[33m[tringlo]\x1b[0m ${message}`);
+const fail = (message) => console.log(`\x1b[31m[tringlo]\x1b[0m ${message}`);
 
 /** This machine's private IPv4 addresses — the same list next.config.ts allows. */
 function lanAddresses() {
@@ -176,8 +176,8 @@ async function registerUrl(url) {
     const headers = { "Content-Type": "application/json" };
     // Presented when configured; otherwise the endpoint falls back to accepting
     // only unproxied local requests.
-    if (process.env.DIALO_INTERNAL_SECRET) {
-      headers["x-dialo-internal"] = process.env.DIALO_INTERNAL_SECRET;
+    if (process.env.TRINGLO_INTERNAL_SECRET) {
+      headers["x-tringlo-internal"] = process.env.TRINGLO_INTERNAL_SECRET;
     }
 
     const response = await fetch(`${APP_ORIGIN}/api/integrations/webhook-url`, {
@@ -203,7 +203,7 @@ async function isTunnelHealthy(url) {
     });
     if (!response.ok) return false;
     const body = await response.json().catch(() => null);
-    return body?.service === "dialo-sarvam-webhook";
+    return body?.service === "tringlo-sarvam-webhook";
   } catch {
     return false;
   }

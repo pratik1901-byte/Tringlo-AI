@@ -17,10 +17,10 @@ import { clientKey, rateLimit } from "@/lib/security/rate-limit";
  * forwarding headers, which is what rules the tunnel path out.
  */
 function isAuthorised(request: NextRequest): { ok: boolean; reason: string } {
-  const secret = process.env.DIALO_INTERNAL_SECRET?.trim();
+  const secret = process.env.TRINGLO_INTERNAL_SECRET?.trim();
 
   if (secret && secret.length >= 16) {
-    const provided = request.headers.get("x-dialo-internal") ?? "";
+    const provided = request.headers.get("x-tringlo-internal") ?? "";
     const a = Buffer.from(provided);
     const b = Buffer.from(secret);
     if (a.length !== b.length || !timingSafeEqual(a, b)) {

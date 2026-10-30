@@ -7,7 +7,7 @@ import { Loader2, Pencil, Phone, RefreshCw, Search, ShieldOff, Trash2, Upload, U
 import type { Lead } from "@/lib/types";
 import { isPlaceholderName } from "@/lib/customers/placeholder";
 import { useAgentConfigStore } from "@/lib/store";
-import { useLeads } from "@/lib/use-dialo-data";
+import { useLeads } from "@/lib/use-tringlo-data";
 import { useModalEntrance, useReveal } from "@/lib/animation";
 import { EMPTY, formatPhone, formatText } from "@/lib/format";
 import {

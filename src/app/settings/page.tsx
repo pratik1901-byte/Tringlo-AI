@@ -7,7 +7,7 @@ import { VoiceProviderCard } from "@/components/settings/voice-provider-card";
 import { Check, RefreshCw } from "lucide-react";
 
 import { useSettingsStore } from "@/lib/store";
-import { useProviderStatus } from "@/lib/use-dialo-data";
+import { useProviderStatus } from "@/lib/use-tringlo-data";
 import { ErrorState, PageTitle } from "@/components/ui/data-display";
 
 export default function SettingsPage() {

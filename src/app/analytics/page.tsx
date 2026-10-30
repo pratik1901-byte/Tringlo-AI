@@ -14,7 +14,7 @@ import {
   YAxis,
 } from "recharts";
 
-import { useMetrics } from "@/lib/use-dialo-data";
+import { useMetrics } from "@/lib/use-tringlo-data";
 import { useReveal } from "@/lib/animation";
 import { formatCount, formatDelta, formatDuration, formatPercent } from "@/lib/format";
 import {

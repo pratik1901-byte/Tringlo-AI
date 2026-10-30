@@ -258,7 +258,7 @@ async function pull(campaign: Campaign, result: SyncResult): Promise<SyncResult>
       end_datetime: endedAt,
       output_agent_variables: connected ? (withoutInstructions(attempt.agent_variables) as SarvamWebhookPayload["output_agent_variables"]) : null,
       interaction_transcript: transcript as SarvamWebhookPayload["interaction_transcript"],
-      metadata: { source: "sarvam_analytics", dialo_campaign_id: campaign.id },
+      metadata: { source: "sarvam_analytics", tringlo_campaign_id: campaign.id },
     };
 
     const applied = applySarvamEvent(payload);

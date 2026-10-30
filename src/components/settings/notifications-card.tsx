@@ -51,7 +51,7 @@ export function NotificationsCard() {
     }
   }, []);
 
-  // Scheduled rather than called inline, matching lib/use-dialo-data.
+  // Scheduled rather than called inline, matching lib/use-tringlo-data.
   useEffect(() => {
     const timer = setTimeout(load, 0);
     return () => clearTimeout(timer);

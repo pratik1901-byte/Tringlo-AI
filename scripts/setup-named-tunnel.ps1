@@ -1,8 +1,8 @@
 # ============================================================
-# Dialo AI — Cloudflare Named Tunnel Setup
+# Tringlo AI — Cloudflare Named Tunnel Setup
 # ============================================================
 #
-# Gives Dialo a webhook hostname that does not change.
+# Gives Tringlo a webhook hostname that does not change.
 #
 # A quick tunnel (trycloudflare.com) mints a random hostname per run and
 # Cloudflare revokes it after a few hours, while cloudflared stays alive
@@ -23,9 +23,9 @@ param(
     [string]$Hostname,
 
     # Tunnel name as it appears in your Cloudflare dashboard.
-    [string]$TunnelName = "dialo",
+    [string]$TunnelName = "tringlo",
 
-    # Local port the Dialo app listens on.
+    # Local port the Tringlo app listens on.
     [int]$Port = 3000,
 
     # Install cloudflared as a Windows service so the tunnel survives a reboot.
@@ -34,9 +34,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-function Info($m) { Write-Host "[dialo] $m" -ForegroundColor Cyan }
-function Warn($m) { Write-Host "[dialo] $m" -ForegroundColor Yellow }
-function Die($m)  { Write-Host "[dialo] $m" -ForegroundColor Red; exit 1 }
+function Info($m) { Write-Host "[tringlo] $m" -ForegroundColor Cyan }
+function Warn($m) { Write-Host "[tringlo] $m" -ForegroundColor Yellow }
+function Die($m)  { Write-Host "[tringlo] $m" -ForegroundColor Red; exit 1 }
 
 # --- cloudflared ---
 $cf = (Get-Command cloudflared -ErrorAction SilentlyContinue).Source
@@ -79,7 +79,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # --- Config file ---
-# Only the Dialo app is exposed. Everything else returns 404, so the tunnel is
+# Only the Tringlo app is exposed. Everything else returns 404, so the tunnel is
 # not a general proxy onto this machine: no .env.local, no database file, no
 # other local service is reachable through it.
 $cfgDir = Join-Path $env:USERPROFILE ".cloudflared"
@@ -93,7 +93,7 @@ tunnel: $tunnelId
 credentials-file: $cfgDir\$tunnelId.json
 
 ingress:
-  # Only the Dialo application is published.
+  # Only the Tringlo application is published.
   - hostname: $Hostname
     service: http://localhost:$Port
   # Anything else is refused rather than proxied.
@@ -103,7 +103,7 @@ ingress:
 Set-Content -Path $cfgPath -Value $config -Encoding utf8
 Info "Wrote $cfgPath"
 
-# --- Point Dialo at the stable hostname ---
+# --- Point Tringlo at the stable hostname ---
 $envPath = Join-Path (Get-Location) ".env.local"
 $webhookBase = "https://$Hostname"
 if (Test-Path $envPath) {
@@ -132,5 +132,5 @@ Info "Done."
 Info "Webhook URL:  $webhookBase/api/webhooks/sarvam/outbound"
 Write-Host ""
 Info "Run the tunnel with:   cloudflared tunnel run $TunnelName"
-Info "Then start Dialo with: npm run dev:app"
+Info "Then start Tringlo with: npm run dev:app"
 Info "Verify with:           curl $webhookBase/api/health"

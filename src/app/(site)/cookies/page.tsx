@@ -37,13 +37,13 @@ const sections: LegalSection[] = [
         </thead>
         <tbody>
           <tr>
-            <td>dialo_session</td>
+            <td>tringlo_session</td>
             <td>First-party cookie, http-only, strictly necessary</td>
             <td>Keeps you signed in. Set only after you log in; never set for visitors who don’t.</td>
             <td>30 days (12 hours without “remember me”), or until you sign out</td>
           </tr>
           <tr>
-            <td>dialo-theme</td>
+            <td>tringlo-theme</td>
             <td>Browser local storage, functional</td>
             <td>Remembers whether you chose light or dark mode in the app.</td>
             <td>Until you clear it</td>

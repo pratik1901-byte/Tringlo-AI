@@ -283,7 +283,7 @@ export async function dispatchBatch(tenantId: string, reminders: Reminder[]): Pr
       retry_config: REMINDER_RETRY,
       webhook_config: {
         url: withWebhookToken(`${base.replace(/\/+$/, "")}/api/webhooks/sarvam/campaign`, outbound.value.webhookToken),
-        metadata: { dialo_tenant_id: tenantId, dialo_reminder_cycle: forDateAudit(reminders) },
+        metadata: { tringlo_tenant_id: tenantId, tringlo_reminder_cycle: forDateAudit(reminders) },
       },
     },
     start_timestamp: now.toISOString(),

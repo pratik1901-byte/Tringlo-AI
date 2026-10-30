@@ -77,7 +77,7 @@ const now = new Date().toISOString();
 db.saveTenant({ id: HOSPITAL, name: "Wellness Hospital", createdAt: now });
 db.saveAgentConfig(HOSPITAL, { companyName: "Wellness Hospital", productName: "Appointments", industry: "Healthcare" });
 enableHospital(HOSPITAL, "Wellness Hospital", "staff_1");
-db.saveWebhookBaseUrl("https://dialo.example.com");
+db.saveWebhookBaseUrl("https://tringlo.example.com");
 saveWorkspaceProvider(
   HOSPITAL,
   {

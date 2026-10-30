@@ -196,7 +196,7 @@ export function validateInboundInput(tenantId: string, input: InboundSettingsInp
   if (input.deploymentId !== undefined) {
     const value = (input.deploymentId ?? "").trim();
     if (value && !/^[A-Za-z0-9._-]{4,120}$/.test(value)) {
-      problems.push("A deployment ID looks like Dialo-AI-1a2b3c4d-5e6f — letters, numbers, dots, hyphens and underscores only.");
+      problems.push("A deployment ID looks like Tringlo-AI-1a2b3c4d-5e6f — letters, numbers, dots, hyphens and underscores only.");
     }
     const takenBy = value
       ? getAllInboundSettings().find((settings) => settings.tenantId !== tenantId && settings.deploymentId === value)
@@ -270,7 +270,7 @@ function payloadFor(settings: InboundSettings, config: ReturnType<typeof inbound
     },
     webhook_config: {
       url: withWebhookToken(`${config.webhookBase}${WEBHOOK_PATH}`, config.webhookToken),
-      metadata: { dialo_tenant_id: settings.tenantId },
+      metadata: { tringlo_tenant_id: settings.tenantId },
     },
   };
 }
@@ -513,7 +513,7 @@ export async function ensureInboundWebhookCurrent(settings: InboundSettings): Pr
   try {
     await setDeploymentStatus(sarvamCredentials(), settings.deploymentId, "pause");
     await updateDeployment(sarvamCredentials(), settings.deploymentId, {
-      webhook_config: { url: withWebhookToken(wanted, config.webhookToken), metadata: { dialo_tenant_id: settings.tenantId } },
+      webhook_config: { url: withWebhookToken(wanted, config.webhookToken), metadata: { tringlo_tenant_id: settings.tenantId } },
     });
     const remote = await setDeploymentStatus(sarvamCredentials(), settings.deploymentId, "resume");
     saveInboundSettings({ ...settings, webhookUrl: wanted, deploymentStatus: toStatus(remote) ?? "active", lastError: null });

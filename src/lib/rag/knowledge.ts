@@ -73,7 +73,7 @@ class KnowledgeRegistry {
         effective_from: new Date().toISOString(),
         language: "en-IN",
         approved: doc.approved !== false, // default approved
-        source: "dialo_business_portal",
+        source: "tringlo_business_portal",
       },
       keywords: doc.keywords || [],
     }));

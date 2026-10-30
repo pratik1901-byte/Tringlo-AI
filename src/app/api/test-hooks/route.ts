@@ -9,10 +9,10 @@ import { updateFollowUp } from "@/lib/db";
  * mid-trigger, or a follow-up already linked to an in-flight callback — and they
  * are exactly the paths that broke in production. So they are reachable here,
  * behind two locks: the route refuses to exist in a production build, and it
- * requires DIALO_TEST_HOOKS to be set explicitly.
+ * requires TRINGLO_TEST_HOOKS to be set explicitly.
  */
 function enabled(): boolean {
-  return process.env.NODE_ENV !== "production" && process.env.DIALO_TEST_HOOKS === "true";
+  return process.env.NODE_ENV !== "production" && process.env.TRINGLO_TEST_HOOKS === "true";
 }
 
 export async function POST(request: NextRequest) {

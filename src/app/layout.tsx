@@ -62,7 +62,7 @@ export const viewport: Viewport = {
  * preference decides. A choice saved under the product's old name is carried
  * over once, so nobody's setting resets.
  */
-const THEME_BOOTSTRAP = `(function(){try{var k="tringlo-theme",s=localStorage.getItem(k);if(!s){s=localStorage.getItem("dialo-theme");if(s){localStorage.setItem(k,s);localStorage.removeItem("dialo-theme");}}var d=s==="dark"||(!s&&window.matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.toggle("dark",d);}catch(e){}})();`;
+const THEME_BOOTSTRAP = `(function(){try{var k="tringlo-theme",s=localStorage.getItem(k);if(!s){s=localStorage.getItem("tringlo-theme");if(s){localStorage.setItem(k,s);localStorage.removeItem("tringlo-theme");}}var d=s==="dark"||(!s&&window.matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.toggle("dark",d);}catch(e){}})();`;
 
 /**
  * Development only: stops React's DevTools timing from crashing the page on
@@ -77,7 +77,7 @@ const THEME_BOOTSTRAP = `(function(){try{var k="tringlo-theme",s=localStorage.ge
  * Only that one error is swallowed — the cost is a missing entry in a
  * DevTools timeline. Any other error from `measure` is re-thrown.
  */
-const DEV_MEASURE_GUARD = `(function(){try{var p=window.performance;if(!p||!p.measure||p.__dialoGuard)return;var m=p.measure.bind(p);p.measure=function(){try{return m.apply(null,arguments)}catch(e){if(e&&/negative time ?stamp/i.test(String(e.message)))return undefined;throw e}};p.__dialoGuard=true}catch(e){}})();`;
+const DEV_MEASURE_GUARD = `(function(){try{var p=window.performance;if(!p||!p.measure||p.__tringloGuard)return;var m=p.measure.bind(p);p.measure=function(){try{return m.apply(null,arguments)}catch(e){if(e&&/negative time ?stamp/i.test(String(e.message)))return undefined;throw e}};p.__tringloGuard=true}catch(e){}})();`;
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (

@@ -14,7 +14,7 @@ import { Download, Loader2, X } from "lucide-react";
 
 import { ErrorState, Tag } from "@/components/ui/data-display";
 import { ModalBody } from "@/components/ui/modal-body";
-import { useApi } from "@/lib/use-dialo-data";
+import { useApi } from "@/lib/use-tringlo-data";
 import type { CallRecord } from "@/lib/types";
 
 const STATUS: Record<string, { label: string; tone: "neutral" | "pending" | "positive" | "warning" | "negative" }> = {

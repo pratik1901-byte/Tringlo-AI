@@ -15,7 +15,7 @@ function downloadName(leadName: string, when: string | null, extension: "mp3" | 
   const stamp = Number.isNaN(date.getTime())
     ? "unknown-date"
     : date.toISOString().slice(0, 16).replace(/[:T]/g, "-");
-  return `dialo-${person}-${stamp}.${extension}`;
+  return `tringlo-${person}-${stamp}.${extension}`;
 }
 
 /**

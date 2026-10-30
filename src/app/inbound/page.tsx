@@ -24,7 +24,7 @@ import {
 } from "recharts";
 
 import type { InboundAnalytics } from "@/lib/inbound/analytics";
-import { useApi } from "@/lib/use-dialo-data";
+import { useApi } from "@/lib/use-tringlo-data";
 import { formatCount, formatDuration, formatLabel, formatPercent } from "@/lib/format";
 import { EmptyState, ErrorState, LoadingState, MetricCard, PageHeader } from "@/components/ui/data-display";
 import { CHART_COLORS, chartTooltipStyle } from "@/lib/chart-theme";

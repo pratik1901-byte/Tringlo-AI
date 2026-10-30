@@ -465,7 +465,7 @@ export async function launchCampaign(tenantId: string, userId: string, input: La
       },
       webhook_config: {
         url: withWebhookToken(webhookPath, config.webhookToken),
-        metadata: { dialo_campaign_id: id, dialo_tenant_id: tenantId },
+        metadata: { tringlo_campaign_id: id, tringlo_tenant_id: tenantId },
       },
     },
     start_timestamp: new Date(schedule.start).toISOString(),

@@ -199,7 +199,7 @@ const TIMEZONES = [
 
 function TimezoneOptions() {
   return (
-    <datalist id="dialo-timezones">
+    <datalist id="tringlo-timezones">
       {TIMEZONES.map((zone) => (
         <option key={zone} value={zone} />
       ))}
@@ -443,7 +443,7 @@ export function VoiceProviderSections({
             <input
               value={draft.batch.timezone}
               onChange={(e) => setBatch({ timezone: e.target.value })}
-              list="dialo-timezones"
+              list="tringlo-timezones"
               className={`${field} mt-auto`}
             />
           </label>
@@ -625,7 +625,7 @@ export function VoiceProviderSections({
                 <input
                   value={draft.inbound.timezone}
                   onChange={(e) => setInbound({ timezone: e.target.value })}
-                  list="dialo-timezones"
+                  list="tringlo-timezones"
                   className={`${field} mt-auto`}
                 />
               </label>

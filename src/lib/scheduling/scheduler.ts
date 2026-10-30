@@ -492,9 +492,9 @@ export async function runSchedulerTick(now = Date.now()): Promise<TickReport> {
 // ------------------------------------------------------------
 
 declare global {
-  var __dialoSchedulerTimer: ReturnType<typeof setInterval> | undefined;
-  var __dialoSchedulerLastTick: string | undefined;
-  var __dialoSchedulerLastError: string | undefined;
+  var __tringloSchedulerTimer: ReturnType<typeof setInterval> | undefined;
+  var __tringloSchedulerLastTick: string | undefined;
+  var __tringloSchedulerLastError: string | undefined;
 }
 
 let running = false;
@@ -509,10 +509,10 @@ export interface SchedulerStatus {
 /** What /api/health reports. A scheduler that has stopped is a silent failure. */
 export function schedulerStatus(): SchedulerStatus {
   return {
-    running: Boolean(globalThis.__dialoSchedulerTimer),
+    running: Boolean(globalThis.__tringloSchedulerTimer),
     intervalMs: TICK_INTERVAL_MS,
-    lastTickAt: globalThis.__dialoSchedulerLastTick ?? null,
-    lastError: globalThis.__dialoSchedulerLastError ?? null,
+    lastTickAt: globalThis.__tringloSchedulerLastTick ?? null,
+    lastError: globalThis.__tringloSchedulerLastError ?? null,
   };
 }
 
@@ -524,14 +524,14 @@ export function schedulerStatus(): SchedulerStatus {
  * the next one.
  */
 export function startScheduler(): void {
-  if (process.env.DIALO_DISABLE_SCHEDULER === "true") {
-    console.log("[Scheduler] Disabled by DIALO_DISABLE_SCHEDULER.");
+  if (process.env.TRINGLO_DISABLE_SCHEDULER === "true") {
+    console.log("[Scheduler] Disabled by TRINGLO_DISABLE_SCHEDULER.");
     return;
   }
 
-  if (globalThis.__dialoSchedulerTimer) return;
+  if (globalThis.__tringloSchedulerTimer) return;
 
-  globalThis.__dialoSchedulerTimer = setInterval(async () => {
+  globalThis.__tringloSchedulerTimer = setInterval(async () => {
     if (running) return;
     running = true;
     try {
@@ -554,11 +554,11 @@ export function startScheduler(): void {
       } catch (error) {
         console.error("[Scheduler] Provider directory refresh failed:", error instanceof Error ? error.message : error);
       }
-      globalThis.__dialoSchedulerLastTick = new Date().toISOString();
-      globalThis.__dialoSchedulerLastError = undefined;
+      globalThis.__tringloSchedulerLastTick = new Date().toISOString();
+      globalThis.__tringloSchedulerLastError = undefined;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      globalThis.__dialoSchedulerLastError = message;
+      globalThis.__tringloSchedulerLastError = message;
       console.error("[Scheduler] Tick failed:", message);
     } finally {
       running = false;

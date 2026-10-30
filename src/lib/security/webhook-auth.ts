@@ -41,7 +41,7 @@ export type WebhookAuthResult =
  * Checks the token on an incoming webhook.
  *
  * Only a workspace's own token is accepted. The server-wide
- * `DIALO_WEBHOOK_TOKEN` is no longer honoured at runtime: it identified no
+ * `TRINGLO_WEBHOOK_TOKEN` is no longer honoured at runtime: it identified no
  * workspace, so a delivery carrying it could be authenticated without anyone
  * knowing whose call it was.
  *

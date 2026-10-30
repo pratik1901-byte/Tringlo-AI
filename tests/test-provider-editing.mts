@@ -56,7 +56,7 @@ const A = "ws_alpha";
 const B = "ws_beta";
 db.saveTenant({ id: A, name: "Alpha Finance", createdAt: now });
 db.saveTenant({ id: B, name: "Beta Logistics", createdAt: now });
-db.saveWebhookBaseUrl("https://dialo.example.com");
+db.saveWebhookBaseUrl("https://tringlo.example.com");
 
 // A signed-in owner for each, so the routes run exactly as they really do.
 const sessionFor = (tenantId: string, email: string, token: string) => {
@@ -254,19 +254,19 @@ check("A request carries no deployment ID, and none is invented", !("deploymentI
 // ---------------- 9. the deployment ID comes from the response ----------------
 section("Deployment ID, from Sarvam's response");
 const deploymentResponse = `{
-  "deployment_id":"Dialo-AI-9f3c21aa-77be","name":"Line","status":"active",
+  "deployment_id":"Tringlo-AI-9f3c21aa-77be","name":"Line","status":"active",
   "app_id":"Agent-Inbound","app_version":11,
   "connection_configs":[{"connection_id":"conn-in","phone_numbers":["+918064269100"]}],
   "inbound_config":{"start_time":"08:00:00","end_time":"20:00:00","allowed_days":["Monday"],"timezone":"Asia/Kolkata"}}`;
 const parsedResponse = parseSarvamSnippet("deployment_response", deploymentResponse);
 check("A deployment response is accepted", parsedResponse.ok, parsedResponse.problems);
-check("…and yields the real deployment ID", parsedResponse.fields.deploymentId === "Dialo-AI-9f3c21aa-77be", parsedResponse.fields);
+check("…and yields the real deployment ID", parsedResponse.fields.deploymentId === "Tringlo-AI-9f3c21aa-77be", parsedResponse.fields);
 check("…along with whatever else it states", parsedResponse.fields.appId === "Agent-Inbound" && parsedResponse.fields.phoneNumber === "+918064269100");
 check("…and notes that saving does not change the line's state", parsedResponse.warnings.some((w) => /Saving does not change that/i.test(w)), parsedResponse.warnings);
 const noId = parseSarvamSnippet("deployment_response", `{"name":"Line","status":"active","app_id":"Agent-Inbound","app_version":11}`);
 check("A response without a deployment ID invents none", !noId.ok && !("deploymentId" in noId.fields), noId.fields);
 check("…and says where to get one", noId.problems.some((p) => /deployment_id/.test(p)), noId.problems);
-const listResponse = parseSarvamSnippet("deployment_response", `{"items":[{"deployment_id":"Dialo-AI-one"},{"deployment_id":"Dialo-AI-two"}]}`);
+const listResponse = parseSarvamSnippet("deployment_response", `{"items":[{"deployment_id":"Tringlo-AI-one"},{"deployment_id":"Tringlo-AI-two"}]}`);
 check("A response listing several deployments refuses to guess which", !listResponse.ok && !("deploymentId" in listResponse.fields), listResponse.problems);
 
 // Saving the inbound line's settings, including the new deployment ID.
@@ -274,7 +274,7 @@ const inboundDraft: VoiceProviderDraft = {
   ...withBatch,
   inbound: {
     on: true, appId: "Agent-Inbound", appVersion: "11", connectionId: "conn-in",
-    phoneNumber: "+918064269100", deploymentId: "Dialo-AI-9f3c21aa-77be", handoffNumber: "+918000000055",
+    phoneNumber: "+918064269100", deploymentId: "Tringlo-AI-9f3c21aa-77be", handoffNumber: "+918000000055",
     startTime: "08:00", endTime: "20:00", days: ["Monday", "Tuesday"], timezone: "Asia/Kolkata",
   },
 };
@@ -290,24 +290,24 @@ const putInbound = await inboundRoute.PUT(request("http://localhost/api/inbound/
 }));
 check("The inbound settings save", putInbound.status === 200, putInbound.status);
 const inboundStored = db.getInboundSettings(A)!;
-check("…with the new deployment ID", inboundStored.deploymentId === "Dialo-AI-9f3c21aa-77be", inboundStored.deploymentId);
+check("…with the new deployment ID", inboundStored.deploymentId === "Tringlo-AI-9f3c21aa-77be", inboundStored.deploymentId);
 check("…and the number people will call", inboundStored.phoneNumber === "+918064269100");
 check("Saving did not switch the line on", inboundStored.enabled === false, inboundStored.enabled);
 check("…and created nothing at Sarvam", !hits.some((h) => h.method === "POST" || h.method === "PUT"), hits);
 
 // A deployment already answering for another workspace cannot be taken.
 saveInboundDraft(B, {
-  phoneNumber: "+918099990000", deploymentId: "Dialo-AI-beta-owned",
+  phoneNumber: "+918099990000", deploymentId: "Tringlo-AI-beta-owned",
   startTime: "09:00", endTime: "18:00", days: ["Monday"], timezone: "Asia/Kolkata",
   handoffNumber: null, afterHoursMessage: null,
 } as never);
 const stealDeployment = await inboundRoute.PUT(request("http://localhost/api/inbound/settings", authA, "PUT", {
-  phoneNumber: "+918064269100", deploymentId: "Dialo-AI-beta-owned",
+  phoneNumber: "+918064269100", deploymentId: "Tringlo-AI-beta-owned",
   startTime: "08:00", endTime: "20:00", days: ["Monday"], timezone: "Asia/Kolkata",
 }));
 check("A deployment owned by another workspace is refused", stealDeployment.status === 400, stealDeployment.status);
 check("…naming the reason", /another workspace/i.test(JSON.stringify(await stealDeployment.json())));
-check("…and A keeps its own deployment", db.getInboundSettings(A)!.deploymentId === "Dialo-AI-9f3c21aa-77be");
+check("…and A keeps its own deployment", db.getInboundSettings(A)!.deploymentId === "Tringlo-AI-9f3c21aa-77be");
 const stealNumber = await inboundRoute.PUT(request("http://localhost/api/inbound/settings", authA, "PUT", {
   phoneNumber: "+918099990000", startTime: "08:00", endTime: "20:00", days: ["Monday"], timezone: "Asia/Kolkata",
 }));
@@ -397,7 +397,7 @@ db.saveCampaignRun({
   appId: "Agent-A", appVersion: 4, connectionId: "conn-a", phoneNumbers: ["+918000000001"],
   attemptsPerSecond: 1, retry: {} as never, schedule: {} as never,
   members: [{ leadId: "lead_keep", phone: "+919800000001", name: "Asha", hadMemory: false }],
-  failureReason: null, webhookUrl: "https://dialo.example.com/hook", createdBy: "u",
+  failureReason: null, webhookUrl: "https://tringlo.example.com/hook", createdBy: "u",
   createdAt: now, updatedAt: now, launchedAt: now, lastSyncedAt: null,
 } as never);
 await providerRoute.PUT(request("http://localhost/api/integrations/provider", authA, "PUT", {

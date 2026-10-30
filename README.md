@@ -1,12 +1,12 @@
-# Dialo AI
+# Tringlo AI
 
 Outbound sales calling on Sarvam Voice Agents. A call is placed through Sarvam
 Instant Outbound over Vobiz telephony; the agent runs the conversation; Sarvam
-posts the result back to Dialo, which stores it and renders it.
+posts the result back to Tringlo, which stores it and renders it.
 
 ## The one rule
 
-**Dialo never invents call data.** Status, duration, transcript, summary,
+**Tringlo never invents call data.** Status, duration, transcript, summary,
 interest, confidence and follow-ups exist only if Sarvam reported them. Anything
 else renders as an em dash. There is no simulation mode, and no timer anywhere
 advances a call's state.
@@ -29,7 +29,7 @@ Call Now
   → the UI reads the database
 ```
 
-`attempt_id` is the only correlation key. Dialo also echoes its own `callId` and
+`attempt_id` is the only correlation key. Tringlo also echoes its own `callId` and
 `lead_id` through `webhook_config.metadata`, which Sarvam returns verbatim.
 
 ## Setup
@@ -55,7 +55,7 @@ cloudflared tunnel --url http://localhost:3000
 # or: ngrok http 3000
 ```
 
-**Dialo now refuses to dial when the webhook URL is unreachable.** Before every
+**Tringlo now refuses to dial when the webhook URL is unreachable.** Before every
 call it fetches its own health probe through `APP_URL`; if nothing answers, the
 call is refused with HTTP 503 and an explanation, and no phone rings. Override
 with `ALLOW_CALLS_WITHOUT_WEBHOOK=true` only if you mean it.
@@ -103,7 +103,7 @@ dishonest.
 
 | Path | Responsibility |
 | --- | --- |
-| `lib/providers/sarvam/webhooks.ts` | Parsing. Pure, and the only place a provider field becomes a Dialo field. |
+| `lib/providers/sarvam/webhooks.ts` | Parsing. Pure, and the only place a provider field becomes a Tringlo field. |
 | `lib/calls/service.ts` | The reducer. Correlation, idempotency, suppression, follow-up creation. |
 | `lib/db/` | Persistence and the webhook idempotency ledger. |
 | `lib/metrics.ts` | Every number the dashboard and analytics show. |
@@ -111,7 +111,7 @@ dishonest.
 | `lib/animation.ts` | GSAP primitives, all honouring `prefers-reduced-motion`. |
 
 Leads, call records and follow-ups have **no** client-side store. They are read
-through `lib/use-dialo-data.ts` on every screen, so the browser cannot show a
+through `lib/use-tringlo-data.ts` on every screen, so the browser cannot show a
 result the database does not have.
 
 ## Storage

@@ -300,7 +300,7 @@ check("Creating a workspace without a session is refused", anonCreate.status ===
 
 // 19. the privileged bootstrap route stays privileged.
 section("Internal bootstrap stays protected");
-const bootstrapAttempt = await bootstrapRoute.POST(new Request("http://dialo.example.com/api/auth/bootstrap", {
+const bootstrapAttempt = await bootstrapRoute.POST(new Request("http://tringlo.example.com/api/auth/bootstrap", {
   method: "POST",
   headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.9" },
   body: JSON.stringify({ email: "new@example.com", password: PASSWORD, name: "New", businessName: "Remote Co" }),

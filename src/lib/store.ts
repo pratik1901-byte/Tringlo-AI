@@ -142,7 +142,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 // They used to be mirrored into zustand and persisted to localStorage, which let
 // the browser show call outcomes the database did not have — including results
 // from a previous session that no longer existed server-side. They are now read
-// only through the hooks in lib/use-dialo-data.ts, so the database is the single
+// only through the hooks in lib/use-tringlo-data.ts, so the database is the single
 // source of truth for anything a call produced.
 
 // Campaigns are server-side (lib/campaigns) and created at Sarvam; the old
@@ -242,7 +242,7 @@ export const useTTSGenerationsStore = create<TTSGenerationsState>()(
                 set((state) => ({ generations: [gen, ...state.generations].slice(0, 50) })),
             clearGenerations: () => set({ generations: [] }),
         }),
-        { name: "dialo-tts-generations" }
+        { name: "tringlo-tts-generations" }
     )
 );
 
@@ -345,7 +345,7 @@ export function clearBrowserHeldWorkspaceState(): void {
     if (typeof window !== "undefined") {
         // Written by earlier versions, which persisted this state. Removed so a
         // browser that still has them does not rehydrate another workspace's.
-        for (const key of ["dialo-agent-config", "dialo-company", "dialo-settings", "dialo-tts-generations"]) {
+        for (const key of ["tringlo-agent-config", "tringlo-company", "tringlo-settings", "tringlo-tts-generations"]) {
             try {
                 window.localStorage.removeItem(key);
             } catch {

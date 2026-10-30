@@ -27,7 +27,7 @@ const PROJECT_MARKERS = ["package.json", "next.config.ts", "next.config.mjs"];
 export function isolateDatabase(label = "suite"): string {
   const start = process.cwd();
 
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `dialo-${label}-`));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `tringlo-${label}-`));
   fs.mkdirSync(path.join(dir, "data"), { recursive: true });
   process.chdir(dir);
 

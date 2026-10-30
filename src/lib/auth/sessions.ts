@@ -26,7 +26,7 @@
 
 import { createHash, randomBytes, timingSafeEqual } from "crypto";
 
-export const SESSION_COOKIE = "dialo_session";
+export const SESSION_COOKIE = "tringlo_session";
 
 /**
  * A remembered session outlives a restart of the app, which is the point of
