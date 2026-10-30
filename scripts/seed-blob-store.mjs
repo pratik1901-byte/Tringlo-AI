@@ -1,30 +1,30 @@
 // ============================================================
 // One-time: upload the local database to the external store
 // ============================================================
-// Run this ONCE, locally, after creating a free Upstash Redis (or Vercel KV)
-// database, to copy your current data/database.json into the store so the free
-// Render deploy starts with your real workspaces, provider config, doctors and
-// appointments — not an empty database.
+// Run this ONCE, locally, after creating a free Neon Postgres database (or an
+// Upstash Redis / Vercel KV store), to copy your current data/database.json
+// into the store so the free Render deploy starts with your real workspaces,
+// provider config, doctors and appointments — not an empty database.
 //
-//   TRINGLO_DB_REST_URL="https://xxxx.upstash.io" \
-//   TRINGLO_DB_REST_TOKEN="xxxx" \
-//   node scripts/seed-blob-store.mjs
+//   Neon:    DATABASE_URL="postgresql://user:pass@host/db" node scripts/seed-blob-store.mjs
+//   Upstash: TRINGLO_DB_REST_URL="https://xxxx.upstash.io" TRINGLO_DB_REST_TOKEN="xxxx" node scripts/seed-blob-store.mjs
 //
-// Safe to re-run: it overwrites the store's single blob with the local file.
-// It never prints the token. It will NOT overwrite a non-empty store unless you
-// pass --force, so you cannot accidentally clobber live data.
+// Safe to re-run with --force. It never prints the credential, and refuses to
+// overwrite a non-empty store unless you pass --force.
 // ============================================================
 
 import fs from "node:fs";
 import path from "node:path";
 
-const url = (process.env.TRINGLO_DB_REST_URL || process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || "").trim().replace(/\/+$/, "");
-const token = (process.env.TRINGLO_DB_REST_TOKEN || process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || "").trim();
+const databaseUrl = (process.env.DATABASE_URL || process.env.TRINGLO_DATABASE_URL || "").trim();
+const restUrl = (process.env.TRINGLO_DB_REST_URL || process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || "").trim().replace(/\/+$/, "");
+const restToken = (process.env.TRINGLO_DB_REST_TOKEN || process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || "").trim();
 const key = (process.env.TRINGLO_DB_BLOB_KEY || "tringlo:db").trim();
 const force = process.argv.includes("--force");
+const backend = /^postgres(ql)?:\/\//i.test(databaseUrl) ? "neon" : restUrl && restToken ? "kv" : null;
 
-if (!url || !token) {
-  console.error("Set TRINGLO_DB_REST_URL and TRINGLO_DB_REST_TOKEN first.");
+if (!backend) {
+  console.error("Set DATABASE_URL (Neon) or TRINGLO_DB_REST_URL + TRINGLO_DB_REST_TOKEN (Upstash) first.");
   process.exit(1);
 }
 
@@ -34,7 +34,6 @@ if (!fs.existsSync(dbFile)) {
   process.exit(1);
 }
 const blob = fs.readFileSync(dbFile, "utf-8");
-// Validate it parses, so a corrupt file is never pushed.
 try {
   JSON.parse(blob);
 } catch {
@@ -42,22 +41,35 @@ try {
   process.exit(1);
 }
 
-async function command(args) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify(args),
-  });
+async function existingNeon() {
+  const { neon } = await import("@neondatabase/serverless");
+  const sql = neon(databaseUrl);
+  await sql`CREATE TABLE IF NOT EXISTS tringlo_db (id integer PRIMARY KEY DEFAULT 1, blob text NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`;
+  const rows = await sql`SELECT blob FROM tringlo_db WHERE id = 1`;
+  return { sql, existing: rows[0]?.blob ?? null };
+}
+async function existingKv() {
+  const res = await fetch(restUrl, { method: "POST", headers: { Authorization: `Bearer ${restToken}`, "Content-Type": "application/json" }, body: JSON.stringify(["GET", key]) });
   if (!res.ok) throw new Error(`store HTTP ${res.status}`);
-  const body = await res.json();
-  if (body.error) throw new Error(body.error);
-  return body.result;
+  return (await res.json()).result ?? null;
 }
 
-const existing = await command(["GET", key]);
-if (existing && !force) {
-  console.error(`The store already has data at "${key}". Re-run with --force to overwrite it.`);
-  process.exit(1);
+if (backend === "neon") {
+  const { sql, existing } = await existingNeon();
+  if (existing && !force) {
+    console.error("The Neon table already has data. Re-run with --force to overwrite it.");
+    process.exit(1);
+  }
+  await sql`INSERT INTO tringlo_db (id, blob, updated_at) VALUES (1, ${blob}, now())
+            ON CONFLICT (id) DO UPDATE SET blob = EXCLUDED.blob, updated_at = now()`;
+  console.log(`Uploaded ${blob.length} bytes to Neon (table tringlo_db). The free deploy will now load your data.`);
+} else {
+  const existing = await existingKv();
+  if (existing && !force) {
+    console.error(`The store already has data at "${key}". Re-run with --force to overwrite it.`);
+    process.exit(1);
+  }
+  const res = await fetch(restUrl, { method: "POST", headers: { Authorization: `Bearer ${restToken}`, "Content-Type": "application/json" }, body: JSON.stringify(["SET", key, blob]) });
+  if (!res.ok) { console.error(`store HTTP ${res.status}`); process.exit(1); }
+  console.log(`Uploaded ${blob.length} bytes to the store (key "${key}"). The free deploy will now load your data.`);
 }
-await command(["SET", key, blob]);
-console.log(`Uploaded ${blob.length} bytes to the store (key "${key}"). The free deploy will now load your data.`);

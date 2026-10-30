@@ -3,10 +3,11 @@
 # ============================================================
 # Free web services have NO persistent disk and spin down after ~15 min idle,
 # so the database is NOT kept on the local file here. Instead it is mirrored to
-# a free external key-value store (Upstash Redis / Vercel KV — same REST wire
-# format) set via TRINGLO_DB_REST_URL + TRINGLO_DB_REST_TOKEN. With those set,
-# data survives restarts and redeploys. Without them the app would lose all
-# data on every spin-down, so DO NOT deploy free without configuring the store.
+# a free external store. Set ONE of:
+#   - DATABASE_URL (a free Neon Postgres connection string)  [recommended]
+#   - TRINGLO_DB_REST_URL + TRINGLO_DB_REST_TOKEN (Upstash Redis / Vercel KV)
+# With one set, data survives restarts and redeploys. Without any, the app would
+# lose all data on every spin-down, so DO NOT deploy free without configuring one.
 #
 # Caveats of the free plan (unavoidable, not bugs): the service sleeps after
 # ~15 min of inactivity, so the first request after idle cold-starts (slow) and
@@ -29,8 +30,11 @@ services:
         sync: false
       - key: NODE_ENV
         value: production
-      # External database (free, persistent). Required on the free plan.
-      # From an Upstash Redis database (REST) or a Vercel KV store.
+      # External database (free, persistent) — REQUIRED on the free plan.
+      # Recommended: a free Neon Postgres connection string.
+      - key: DATABASE_URL
+        sync: false
+      # Alternative to DATABASE_URL: an Upstash Redis / Vercel KV REST store.
       - key: TRINGLO_DB_REST_URL
         sync: false
       - key: TRINGLO_DB_REST_TOKEN

@@ -50,6 +50,16 @@ await blob.saveBlob(""); // empty clears
 check("an empty/absent value reads back as null", (await blob.loadBlob()) === null);
 
 // ------------------------------------------------------------
+section("Backend selection (Neon vs KV)");
+
+check("KV is detected when REST url + token are set", blob.blobBackend() === "kv");
+process.env.DATABASE_URL = "postgresql://user:secretpass@ep-cool-forest.us-east-2.aws.neon.tech/neondb";
+check("Neon is preferred when DATABASE_URL is a postgres url", blob.blobBackend() === "neon");
+check("…and its label names the host without leaking the password", blob.blobTarget().startsWith("neon:") && !blob.blobTarget().includes("secretpass"));
+delete process.env.DATABASE_URL;
+check("…falls back to KV once DATABASE_URL is removed", blob.blobBackend() === "kv");
+
+// ------------------------------------------------------------
 section("Boot loads from the store");
 
 // Pre-seed the store as if a previous run had persisted a workspace.

@@ -9,3 +9,4 @@ flutter_app
 docs
 *.md
 data/backups
+.claude

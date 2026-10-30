@@ -56,3 +56,6 @@ next-env.d.ts
 
 # Per-install workspace setup applied at startup (Sarvam ids, no secrets)
 data/workspace-setup.json
+
+# Installed agent skills (local dev tooling, not application code)
+/.claude/skills/
