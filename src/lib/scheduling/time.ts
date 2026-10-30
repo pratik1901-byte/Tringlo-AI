@@ -1,5 +1,5 @@
 // ============================================================
-// Dialo AI — Callback Time Resolution
+// Tringlo AI — Callback Time Resolution
 // ============================================================
 //
 // Turns what a customer said into an exact instant, or reports honestly that
@@ -13,7 +13,7 @@
 //   "call me later"               -> vague    (neither)
 //
 // Only `exact` may be scheduled. A `dateOnly` or `vague` request is recorded and
-// surfaced for a time to be asked for — Dialo never picks one. Choosing 11am
+// surfaced for a time to be asked for — Tringlo never picks one. Choosing 11am
 // because the customer said "tomorrow" produces a call they did not agree to.
 // ============================================================
 

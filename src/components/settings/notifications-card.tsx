@@ -1,7 +1,7 @@
 "use client";
 
 // ============================================================
-// Dialo AI — Notifications Settings
+// Tringlo AI — Notifications Settings
 // ============================================================
 //
 // The email toggles, backed by the server.

@@ -4,9 +4,9 @@
 //
 // Two directions, kept strictly apart:
 //
-//   Dialo -> Sarvam   input variables: who we are calling, on whose behalf, and
+//   Tringlo -> Sarvam   input variables: who we are calling, on whose behalf, and
 //                     the approved company knowledge the agent may speak from.
-//   Sarvam -> Dialo   output variables: what the agent learned on the call.
+//   Sarvam -> Tringlo   output variables: what the agent learned on the call.
 //                     Parsed in webhooks.ts, never seeded here.
 //
 // Seeding an output variable on the way out would make a pre-filled value
@@ -29,13 +29,35 @@ import {
  * Sarvam validates this strictly: sending a name the app does not declare fails
  * the whole request with
  *   422 Invalid Parameter — Agent variables '{'x'}' not found in agent variables of app '...'
- * and no call is placed. So Dialo sends only names on this list and drops the rest
- * rather than letting one unknown field block a real call.
+ * and no call is placed. So Tringlo sends only names the workspace's own agent
+ * declares, listed on its provider configuration.
  *
- * Override with SARVAM_AGENT_VARIABLES (comma separated) after declaring the new
- * fields in the Sarvam app, so the two stay in step.
+ * There is no list that is right for every agent. A sales agent declares
+ * product and pipeline fields; a hospital agent declares almost none of them.
+ * So an unlisted workspace falls back to CORE_VARIABLES — the few an agent
+ * needs to address a person at all — and never to another agent's schema.
  */
-const DEFAULT_DECLARED_VARIABLES = [
+/**
+ * Every name an agent might use for the person being called.
+ *
+ * All of them carry the same value, taken from the lead on this call in this
+ * workspace. They are sent only when the app declares them — Sarvam refuses a
+ * whole request over one undeclared variable — so an app that declares none of
+ * these still works on `customer_name` alone.
+ *
+ * `userName` is on this list deliberately: it is the customer, not the agent.
+ */
+export const CUSTOMER_NAME_ALIASES = ["userName", "user_name", "customerName"] as const;
+
+/**
+ * The schema of the original outbound sales agent.
+ *
+ * Kept as a named preset an administrator can choose — it is what TenWeb and
+ * the workspaces built alongside it declare — and written onto those
+ * workspaces by migration, so they keep sending exactly what they send today.
+ * It is no longer an implicit default: a healthcare agent is not a sales agent.
+ */
+export const SALES_AGENT_VARIABLES = [
   "customer_name",
   "phone_number",
   "company_name",
@@ -68,17 +90,133 @@ const DEFAULT_DECLARED_VARIABLES = [
   "crm_stage",
 ] as const;
 
-export function declaredVariableNames(): Set<string> {
-  const configured = process.env.SARVAM_AGENT_VARIABLES?.trim();
-  if (configured) {
-    return new Set(
-      configured
-        .split(",")
-        .map((name) => name.trim())
-        .filter(Boolean)
-    );
+/**
+ * Memory variables Tringlo fills in when the app declares them.
+ *
+ * Everything they carry is also folded into `previous_interaction`, which the
+ * app does declare, so an app without them loses nothing — which is why they
+ * are dropped quietly rather than warned about on every call. Declare any of
+ * them in the Sarvam app (and in SARVAM_AGENT_VARIABLES) to give the prompt
+ * the individual fields.
+ */
+export const OPTIONAL_MEMORY_VARIABLES = [
+  "customer_id",
+  "customer_memory_context",
+  "previous_interaction_summary",
+  "last_call_summary",
+  "previous_interest",
+  "previous_objection",
+  "previous_commitment",
+  "previous_next_step",
+  "follow_up_reason",
+] as const;
+
+/**
+ * The variables the workspace's agent declares in Sarvam. Sarvam rejects
+ * anything it has not declared, so Tringlo sends only these.
+ *
+ * Names are kept exactly as written: `customer_name`, `customerName` and
+ * `userName` are three different variables, and Sarvam treats them so.
+ *
+ * An empty list means exactly that — no custom variables are sent. There is no
+ * built-in list to fall back to, because there is no name every agent
+ * declares: an agent for a hospital, a school or a recruiter declares whatever
+ * its own prompt uses, and Tringlo refuses a whole call by guessing. The
+ * number being dialled is a transport field and does not pass through here.
+ */
+export function declaredVariableNames(declared?: string[] | null): Set<string> {
+  return new Set((declared ?? []).map((name) => name.trim()).filter(Boolean));
+}
+
+/** True when the workspace has told Tringlo what its agent declares. */
+export function hasDeclaredVariables(declared?: string[] | null): boolean {
+  return (declared ?? []).some((name) => name.trim());
+}
+
+/**
+ * The candidate names that carry a workspace's BUSINESS identity and context —
+ * who the agent works for and what it sells — as opposed to per-call facts
+ * like the customer's name or the number being dialled.
+ *
+ * It is this set that decides whether an agent is told about its own business.
+ * An agent that declares `customer_name` but none of these is handed who it is
+ * calling and nothing about what it is calling to say, so it speaks entirely
+ * from whatever prompt it was given on the provider's side.
+ */
+export const BUSINESS_CONTEXT_VARIABLES = [
+  "company_name",
+  "companyName",
+  "seller_company_name",
+  "product_name",
+  "productCategory",
+  "typicalCustomerPainPoints",
+  "qualifyingSegments",
+  "disqualifyingSignals",
+  "industryVertical",
+  "proposedNextStepDefault",
+  "salesObjective",
+  "sales_objective",
+  "business_context",
+  "companyDescription",
+  "productDescription",
+] as const;
+
+export interface BusinessContextReach {
+  /** Whether any business-context variable will actually reach the agent. */
+  reaches: boolean;
+  /** How the business context travels: declared names, a mapping, or nothing. */
+  via: "declared" | "mapping" | "none";
+  /** The business-context variable names this agent declares, if any. */
+  declaredBusinessVariables: string[];
+  /** Total variables this agent is configured to receive. */
+  declaredCount: number;
+  hasMappings: boolean;
+}
+
+/**
+ * Whether a workspace's business information can reach its agent at all.
+ *
+ * This is the question behind "why does the agent talk about the wrong
+ * business": if nothing carries the company and product across, the agent
+ * runs on its own provider-side prompt and Tringlo's configuration never
+ * touches it. The answer is read from the agent's declared variables and its
+ * mappings — names and counts only, never a value — so it is safe to show and
+ * safe to log.
+ */
+export function businessContextReach(
+  declared?: string[] | null,
+  mappings?: Array<{ name?: string }> | null
+): BusinessContextReach {
+  const names = declaredVariableNames(declared);
+  const declaredBusinessVariables = BUSINESS_CONTEXT_VARIABLES.filter((name) => names.has(name));
+  const mapped = (mappings ?? []).map((m) => (m.name ?? "").trim()).filter(Boolean);
+  const hasMappings = mapped.length > 0;
+
+  if (hasMappings) {
+    return { reaches: true, via: "mapping", declaredBusinessVariables, declaredCount: names.size, hasMappings };
   }
-  return new Set<string>(DEFAULT_DECLARED_VARIABLES);
+  if (declaredBusinessVariables.length > 0) {
+    return { reaches: true, via: "declared", declaredBusinessVariables, declaredCount: names.size, hasMappings };
+  }
+  return { reaches: false, via: "none", declaredBusinessVariables: [], declaredCount: names.size, hasMappings };
+}
+
+/**
+ * The variable names Sarvam says the agent does not declare, read out of its
+ * 422. The message names them:
+ *
+ *   Agent variables '{'productCategory', 'lead_notes'}' not found in agent
+ *   variables of app 'Amrita---We-4517816a-a47a'
+ *
+ * Reading them turns a provider rejection into a list an administrator can act
+ * on. Only names are taken — never a value, and never the message wholesale.
+ */
+export function undeclaredVariablesFrom(message: unknown): string[] {
+  const text = typeof message === "string" ? message : "";
+  const section = /agent variables\s*'?\{([^}]*)\}'?\s*not found/i.exec(text);
+  if (!section) return [];
+  const names = section[1].match(/[A-Za-z_][A-Za-z0-9_]*/g) ?? [];
+  return [...new Set(names)];
 }
 
 /** Internal routing values. Present for workflow logic, not for the agent to say. */
@@ -119,6 +257,9 @@ export const CONVERSATION_OUTPUT_KEYS = [
   "do_not_call",
   "alt_contact_number",
   "discovery_fit_score_estimate",
+  // The name the person gave during the call, when it differs from what
+  // we had. An output, so it is never sent outbound.
+  "stated_customer_name",
 ] as const;
 
 export interface BuildAgentVariablesParams {
@@ -134,6 +275,8 @@ export interface BuildAgentVariablesParams {
   ragContext?: string;
   previousInteraction?: string;
   customVariables?: Record<string, unknown>;
+  /** The variables the workspace's agent declares; empty means the core few. */
+  declaredVariables?: string[] | null;
 }
 
 /**
@@ -141,24 +284,30 @@ export interface BuildAgentVariablesParams {
  * one, and drops names the Sarvam app has not declared, which would otherwise
  * make the whole request fail.
  */
-function compact(variables: SarvamAgentVariables): SarvamAgentVariables {
-  const declared = declaredVariableNames();
+function compact(variables: SarvamAgentVariables, declared: Set<string>): SarvamAgentVariables {
   const result: SarvamAgentVariables = {};
   const dropped: string[] = [];
 
   for (const [key, value] of Object.entries(variables)) {
     if (value === null || value === undefined) continue;
-    if (typeof value === "string" && value.trim() === "") continue;
+    // An empty value is normally not worth sending. A name is the exception:
+    // omitting it leaves whatever default the Sarvam agent carries, and those
+    // defaults are demo names, so "unknown" has to be said out loud.
+    const isName = key === "customer_name" || (CUSTOMER_NAME_ALIASES as readonly string[]).includes(key);
+    if (typeof value === "string" && value.trim() === "" && !isName) continue;
     if (!declared.has(key)) {
-      dropped.push(key);
+      if (!(OPTIONAL_MEMORY_VARIABLES as readonly string[]).includes(key)) dropped.push(key);
       continue;
     }
     result[key] = value;
   }
 
-  if (dropped.length > 0) {
+  // Nothing declared is a configuration, not a fault: the agent takes no
+  // custom variables, and listing what was not sent would be noise on every
+  // call. Only a partial list is worth reporting.
+  if (dropped.length > 0 && declared.size > 0) {
     console.warn(
-      `[Sarvam] Not sending ${dropped.join(", ")} — the app does not declare these agent variables. Declare them in the Sarvam app and list them in SARVAM_AGENT_VARIABLES to pass them through.`
+      `[Sarvam] Not sending ${dropped.join(", ")} — this workspace's agent does not declare them. Declare them on the Sarvam agent and add them to the workspace's agent variables to pass them through.`
     );
   }
 
@@ -195,10 +344,11 @@ export function buildSarvamAgentVariables(
     campaignId = "",
     previousInteraction = "",
     customVariables = {},
+    declaredVariables,
   } = params;
 
   const context = buildBusinessContext(agentConfig);
-  const declared = declaredVariableNames();
+  const declared = declaredVariableNames(declaredVariables);
 
   const leadNotes = [
     lead.company?.trim() ? `Works at ${lead.company.trim()}.` : "",
@@ -209,9 +359,30 @@ export function buildSarvamAgentVariables(
 
   const mapped = mapContextToVariables(context, declared, leadNotes);
 
+  // One authoritative customer name, sent on every alias the app declares.
+  //
+  // An alias left unsent keeps whatever default the Sarvam agent carries, and
+  // those defaults are demo names: on 9 October 2026 an agent addressed a
+  // customer as "Manan" from its own `user_name` default while Tringlo had
+  // correctly sent `customer_name: "Pratik"`. An unknown name stays empty —
+  // never a sample name, and never inferred from the phone number.
+  const customerName = lead.name?.trim() || "";
+  const customerNameAliases = Object.fromEntries(
+    CUSTOMER_NAME_ALIASES.filter((alias) => declared.has(alias)).map((alias) => [alias, customerName])
+  );
+
+  // Candidate values, every one of them offered rather than imposed: `compact`
+  // keeps only the names this agent actually declares, so an agent that
+  // declares none of them receives none of them.
+  //
+  // The number being dialled is deliberately absent as a value of its own: it
+  // travels in the provider's `user_config.user_phone_number`. It appears here
+  // only because some agents also declare a `phone_number` variable their own
+  // prompt reads from, and then only if they declare it.
   const variables: SarvamAgentVariables = {
-    // --- Identity ---
-    customer_name: lead.name?.trim() || "",
+    // --- Who is being called, on whichever names this agent uses ---
+    customer_name: customerName,
+    ...customerNameAliases,
     phone_number: normalizedPhone,
     company_name: companyName.trim(),
     companyName: companyName.trim(),
@@ -236,7 +407,7 @@ export function buildSarvamAgentVariables(
   }
 
   return {
-    variables: compact(variables),
+    variables: compact(variables, declared),
     context,
     missingContext: missingContextFields(context),
     usingFallbackFor: mapped.usingFallbackFor,
@@ -251,43 +422,27 @@ export interface VariableValidation {
 }
 
 /**
- * Checks the variables without which the agent cannot run a coherent call.
- * Also rejects unsubstituted template placeholders such as `<customer_name>`,
- * which otherwise reach the customer as spoken text.
+ * Checks the values that are actually about to be sent.
+ *
+ * This used to demand customer_name, company_name and phone_number of every
+ * call, which was Tringlo's own requirement rather than any provider's: an
+ * agent that declares none of them was refused a call it would have handled
+ * perfectly well. What is left is the one check that protects a customer on
+ * the line — an unsubstituted placeholder like `<customer_name>`, which would
+ * otherwise be read out loud.
+ *
+ * Whether a particular variable is required is a question about one agent's
+ * configuration, and is answered by `missingRequiredMappings`.
  */
-export function validateRequiredSarvamVariables(params: {
-  customerName?: string;
-  companyName?: string;
-  productName?: string;
-  phoneNumber?: string;
-}): VariableValidation {
-  const missing: string[] = [];
-  if (!params.customerName?.trim()) missing.push("customer_name");
-  if (!params.companyName?.trim()) missing.push("company_name");
-  if (!params.phoneNumber?.trim()) missing.push("phone_number");
-
-  if (missing.length > 0) {
-    return {
-      valid: false,
-      missing,
-      error: `Required Sarvam agent variable(s) missing: ${missing.join(", ")}`,
-    };
+export function validateOutgoingVariables(variables: SarvamAgentVariables): VariableValidation {
+  for (const [name, value] of Object.entries(variables)) {
+    if (typeof value === "string" && /^<.*>$/.test(value.trim())) {
+      return {
+        valid: false,
+        missing: [name],
+        error: `Unsubstituted template placeholder "${value}" would be spoken to the customer.`,
+      };
+    }
   }
-
-  const placeholder = [
-    params.customerName,
-    params.companyName,
-    params.productName,
-    params.phoneNumber,
-  ].find((value) => typeof value === "string" && /^<.*>$/.test(value.trim()));
-
-  if (placeholder) {
-    return {
-      valid: false,
-      missing: ["literal_placeholder"],
-      error: `Unsubstituted template placeholder "${placeholder}" would be spoken to the customer.`,
-    };
-  }
-
   return { valid: true, missing: [] };
 }

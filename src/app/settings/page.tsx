@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { NotificationsCard } from "@/components/settings/notifications-card";
+import { InboundCard } from "@/components/settings/inbound-card";
+import { VoiceProviderCard } from "@/components/settings/voice-provider-card";
 import { Check, RefreshCw } from "lucide-react";
 
 import { useSettingsStore } from "@/lib/store";
 import { useProviderStatus } from "@/lib/use-dialo-data";
-import { ErrorState } from "@/components/ui/data-display";
+import { ErrorState, PageTitle } from "@/components/ui/data-display";
 
 export default function SettingsPage() {
     const { settings, updateSettings } = useSettingsStore();
@@ -68,8 +70,8 @@ export default function SettingsPage() {
             {/* Header matching Figma */}
             <div className="flex items-start justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-                    <p className="text-sm text-muted-foreground mt-0.5">
+                    <PageTitle title="Settings" />
+                    <p className="mt-2 text-sm text-muted-foreground">
                         Manage your account and preferences
                     </p>
                 </div>
@@ -216,7 +218,7 @@ export default function SettingsPage() {
                         </div>
                     </div>
                     <p className="sm:col-span-2 text-xs leading-relaxed text-muted-foreground">
-                        Applies to retries Dialo schedules on its own. A callback time the customer asks
+                        Applies to retries Tringlo schedules on its own. A callback time the customer asks
                         for is always honoured, even outside these hours.
                         {windowError && (
                             <span className="ml-1 text-amber-600 dark:text-amber-400">{windowError}</span>
@@ -227,6 +229,12 @@ export default function SettingsPage() {
 
             {/* 3. Notifications — server-backed, so the server can act on them. */}
             <NotificationsCard />
+
+            {/* 4. Which Sarvam agent speaks for this workspace. */}
+            <VoiceProviderCard />
+
+            {/* 5. Inbound calling — optional, off by default. */}
+            <InboundCard />
 
             {/* 5. Sarvam Voice Agents & Telephony Diagnostic Card */}
             <SarvamDiagnosticCard />
@@ -314,7 +322,7 @@ function SarvamDiagnosticCard() {
                         )}
                         {status.providerConnectivity === "unreachable" && (
                             <p className="mt-2">
-                                Dialo could not reach apps.sarvam.ai, so calls will fail until this is resolved.
+                                Tringlo could not reach apps.sarvam.ai, so calls will fail until this is resolved.
                             </p>
                         )}
                     </div>

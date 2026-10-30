@@ -1,5 +1,5 @@
 // ============================================================
-// Dialo AI — Sessions
+// Tringlo AI — Sessions
 // ============================================================
 //
 // Opaque session tokens, issued on login and checked on every protected

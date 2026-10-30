@@ -1,7 +1,7 @@
 "use client";
 
 // ============================================================
-// Dialo AI — Signal Field
+// Tringlo AI — Signal Field
 // ============================================================
 //
 // The brand visual on the sign-in screen: a voice travelling down a line.

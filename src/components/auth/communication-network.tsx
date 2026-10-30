@@ -1,7 +1,7 @@
 "use client";
 
 // ============================================================
-// Dialo AI — Communication Network
+// Tringlo AI — Communication Network
 // ============================================================
 //
 // The background scene: routed paths, nodes that activate, signals that travel

@@ -7,7 +7,7 @@ import { useAgentConfigStore } from "@/lib/store";
 import type { CSVParseResult, Lead } from "@/lib/types";
 import { useRouter } from "next/navigation";
 import { RealCallModal } from "@/components/call/RealCallModal";
-import { ErrorState } from "@/components/ui/data-display";
+import { ErrorState, PageTitle } from "@/components/ui/data-display";
 
 type InputMethod = "enter" | "csv";
 type ScheduleMode = "now" | "schedule";
@@ -160,8 +160,8 @@ export default function UploadPage() {
         <div className="space-y-6 max-w-3xl">
             {/* Page header */}
             <div className="">
-                <h1 className="text-2xl font-bold tracking-tight">Upload Leads</h1>
-                <p className="text-sm text-muted-foreground mt-0.5">
+                <PageTitle title="Upload leads" />
+                <p className="mt-2 text-sm text-muted-foreground">
                     Add phone numbers and set a call schedule for each one
                 </p>
             </div>
@@ -282,7 +282,7 @@ export default function UploadPage() {
                         <button
                             onClick={handleSubmitNumbers}
                             disabled={validRows.length === 0 || isSaving}
-                            className="w-full h-11 rounded-lg bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:pointer-events-none shadow-sm"
+                            className="w-full h-11 rounded-lg bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors disabled:pointer-events-none disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none shadow-sm"
                         >
                             {getSubmitLabel()}
                         </button>
@@ -327,8 +327,8 @@ export default function UploadPage() {
                             <div className="space-y-5">
                                 <div className="grid gap-4 grid-cols-3 phone:gap-2">
                                     <div className="rounded-lg border bg-background p-4 flex items-center gap-3 phone:flex-col phone:items-start phone:gap-2 phone:p-3">
-                                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30">
-                                            <FileType className="h-5 w-5 text-blue-600" />
+                                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent">
+                                            <FileType className="h-5 w-5 text-accent-foreground" />
                                         </div>
                                         <div>
                                             <p className="text-xs text-muted-foreground">Total</p>

@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "retry_due") {
-    // A retry Dialo queued itself, now due.
+    // A retry Tringlo queued itself, now due.
     updateFollowUp(id, {
       status: "retry_pending",
       nextAttemptAt: new Date(Date.now() - 1000).toISOString(),

@@ -1,5 +1,5 @@
 // ============================================================
-// Dialo AI — Chart Theme
+// Tringlo AI — Chart Theme
 // ============================================================
 // One palette and one tooltip treatment for every chart, so the product's data
 // reads as a single system. Colours are chosen for legibility against both the
@@ -8,8 +8,9 @@
 // ============================================================
 
 export const CHART_COLORS = {
-  primary: "#4F46E5",
-  muted: "#C7D2FE",
+  /** Theme tokens rather than fixed values, so charts follow light and dark. */
+  primary: "var(--chart-1)",
+  muted: "var(--chart-muted)",
   axis: "var(--muted-foreground)",
   grid: "var(--border)",
 

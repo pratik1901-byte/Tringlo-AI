@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-import { getCallRecord, getCallRecordByAttemptId, getLegacyTenantId, getReachabilityHistory } from "@/lib/db";
+import { getCallRecord, getCallRecordByAttemptId, getReachabilityHistory } from "@/lib/db";
 import { isWorthReconciling, reconcileCallWithProvider } from "@/lib/calls/reconcile";
 import { ownedByTenant, requireAuth } from "@/lib/auth/guard";
 
@@ -12,7 +12,7 @@ import { ownedByTenant, requireAuth } from "@/lib/auth/guard";
  * writes. Because state is persisted rather than held in memory, a browser
  * refresh or a server restart mid-call does not lose the result.
  *
- * `id` accepts either Dialo's call id or the Sarvam attempt_id.
+ * `id` accepts either Tringlo's call id or the Sarvam attempt_id.
  */
 export async function GET(request: NextRequest, ctx: RouteContext<"/api/calls/[id]">) {
   const auth = await requireAuth(request);
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/calls/[i
 
   // Another workspace's call reads as missing, not forbidden, so its
   // existence is not confirmed.
-  if (!record || !ownedByTenant(record, auth.tenantId, getLegacyTenantId())) {
+  if (!record || !ownedByTenant(record, auth.tenantId)) {
     return NextResponse.json(
       { error: "No call found with that id.", callId: id },
       { status: 404 }

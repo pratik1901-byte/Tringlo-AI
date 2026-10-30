@@ -1,0 +1,143 @@
+/* ============================================================
+   Wellness Hospital — design system
+   ------------------------------------------------------------
+   A hospital operations panel is read all day, often in a bright room, by
+   people doing something else at the same time. So: warm paper rather than
+   white, one quiet green that means "this is fine", and charcoal text that
+   stays readable at a glance. Colour is reserved for state that matters —
+   a cancelled appointment, a failed confirmation call — so it keeps meaning
+   something.
+
+   Dark mode is the same room with the lights off, not an inverted picture:
+   the surfaces stay warm, the green stays the same green, and the borders
+   are lifted rather than erased.
+
+   ------------------------------------------------------------
+   EVERYTHING HERE IS SCOPED TO `.hospital-panel`.
+
+   This file lives inside an app that already has a design system and a
+   public website with their own colours. Nothing below may reach them, so
+   every rule is nested under the wrapper the hospital layout puts around
+   its pages — including the base rules that would otherwise be global, like
+   the default border colour and the heading font.
+
+   `--color-ink`, `--color-ink-soft` and `--color-ink-muted` are the
+   platform's own tokens, defined there as literals. They are overridden
+   here rather than redefined globally, so `text-ink` means charcoal-on-paper
+   inside this panel and exactly what it always meant everywhere else.
+   ============================================================ */
+
+.hospital-panel {
+  color-scheme: light;
+
+  /* Paper, in three weights. */
+  --canvas: #f4f0e8;
+  --surface: #fbf9f4;
+  --raised: #ffffff;
+  --sunken: #efeae0;
+
+  --color-ink: #26241f;
+  --color-ink-soft: #4a463e;
+  --color-ink-muted: #6f6a5f;
+
+  --line: #e2dccf;
+  --line-soft: #ede8dc;
+
+  /* The one accent: a muted sage. Used for the current page, a confirmed
+     booking, a healthy state — never for decoration. */
+  --sage: #5c7a5c;
+  --sage-soft: #e7ede3;
+  --sage-ink: #3f5740;
+
+  /* Something needs a person: a warm clay, not an alarm. */
+  --clay: #9a6b3f;
+  --clay-soft: #f6eadc;
+
+  /* Something went wrong. */
+  --alert: #a4443c;
+  --alert-soft: #f7e6e3;
+
+  background: var(--canvas);
+  color: var(--color-ink);
+  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.dark .hospital-panel {
+  color-scheme: dark;
+
+  --canvas: #15140f;
+  --surface: #1c1a15;
+  --raised: #23211a;
+  --sunken: #121109;
+
+  --color-ink: #f2ede1;
+  --color-ink-soft: #d6d0c2;
+  --color-ink-muted: #a49d8d;
+
+  --line: #332f26;
+  --line-soft: #2a271f;
+
+  --sage: #8fae8b;
+  --sage-soft: #26301f;
+  --sage-ink: #c3d8be;
+
+  --clay: #d0a06a;
+  --clay-soft: #332616;
+
+  --alert: #e08b82;
+  --alert-soft: #351c19;
+}
+
+/* Scoped base rules. Each of these would be global in a standalone app; here
+   they stop at the wrapper. */
+.hospital-panel * {
+  border-color: var(--line);
+}
+
+.hospital-panel h1,
+.hospital-panel h2,
+.hospital-panel h3 {
+  font-family: var(--font-display), Georgia, serif;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+/* Figures line up in a column and do not shift as they change. */
+.hospital-panel td,
+.hospital-panel th,
+.hospital-panel .tabular {
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.hospital-panel :focus-visible {
+  outline: 2px solid var(--sage);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.hospital-panel input,
+.hospital-panel select,
+.hospital-panel textarea {
+  background: var(--raised);
+  color: var(--color-ink);
+}
+
+/* On a phone, anything under 16px makes iOS zoom into the field. */
+@media (max-width: 767px) {
+  .hospital-panel input,
+  .hospital-panel select,
+  .hospital-panel textarea {
+    font-size: 16px;
+  }
+}
+
+.hospital-panel ::selection {
+  background: var(--sage-soft);
+  color: var(--sage-ink);
+}
+
+.hospital-panel * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}

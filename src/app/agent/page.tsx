@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, Loader2, Plus, Volume2, X } from "lucide-react";
 
-import { useAgentConfigStore } from "@/lib/store";
+import { emptyAgentConfig, useAgentConfigStore } from "@/lib/store";
 import type { AgentConfig } from "@/lib/types";
 import { SARVAM_LANGUAGES, SARVAM_SPEAKERS, base64ToAudioBlob, generatePreviewScript } from "@/lib/sarvam";
 import { useFadeIn, useReveal } from "@/lib/animation";
+import { PageTitle } from "@/components/ui/data-display";
 
 interface FAQ {
     id: string;
@@ -24,16 +25,43 @@ export default function AgentPage() {
     // product and objective to call with. Debounced so typing does not write on
     // every keystroke.
     const [syncState, setSyncState] = useState<"synced" | "saving" | "error">("synced");
-    const firstRender = useRef(true);
+    // Nothing is written back until this workspace's own configuration has
+    // been read. Saving before that would write whatever the form happened to
+    // be holding over what the workspace actually has.
+    const [loaded, setLoaded] = useState(false);
 
     useEffect(() => {
-        if (firstRender.current) {
-            firstRender.current = false;
-            return;
-        }
+        let cancelled = false;
 
-        setSyncState("saving");
+        (async () => {
+            try {
+                const response = await fetch("/api/agent-config", { cache: "no-store" });
+                if (!response.ok) throw new Error("not ok");
+                const body = await response.json();
+                if (cancelled) return;
+                // Replaces the form wholesale, so a field this workspace has
+                // not set reads empty rather than keeping the last one's.
+                updateConfig({ ...emptyAgentConfig, ...(body.agentConfig ?? {}) });
+            } catch {
+                // Leave the form as it is and allow editing; the save below
+                // reports its own failures.
+            } finally {
+                if (!cancelled) setLoaded(true);
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+        // Runs once per visit to the page.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+        if (!loaded) return;
+
         const timer = setTimeout(async () => {
+            setSyncState("saving");
             try {
                 const response = await fetch("/api/agent-config", {
                     method: "PUT",
@@ -47,7 +75,7 @@ export default function AgentPage() {
         }, 700);
 
         return () => clearTimeout(timer);
-    }, [config]);
+    }, [config, loaded]);
 
     const headerRef = useFadeIn<HTMLDivElement>();
     const formRef = useReveal<HTMLDivElement>({ delay: 0.05 });
@@ -114,10 +142,10 @@ export default function AgentPage() {
         <div className="space-y-6">
             {/* Page header. There is no Save button: every field below writes as you
                 type, so a button that only waited would be theatre. */}
-            <div ref={headerRef} className="flex items-end justify-between gap-4 border-b pb-5">
+            <div ref={headerRef} className="flex items-end justify-between gap-4 pb-2">
                 <div>
-                    <h1 className="font-heading text-2xl font-semibold tracking-tight">AI agent</h1>
-                    <p className="mt-1 text-sm text-muted-foreground">
+                    <PageTitle title="AI agent" />
+                    <p className="mt-2 text-sm text-muted-foreground">
                         What the agent knows and how it speaks. Changes save as you type.
                     </p>
                 </div>
@@ -225,7 +253,7 @@ export default function AgentPage() {
                                     className="w-full h-10 rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 />
                                 <p className="mt-1.5 text-xs text-muted-foreground">
-                                    Dialo assumes nothing about your audience. Say whether this is sold to businesses, to individuals, or to both.
+                                    Tringlo assumes nothing about your audience. Say whether this is sold to businesses, to individuals, or to both.
                                 </p>
                             </div>
                             <div className="grid gap-4 sm:grid-cols-2">

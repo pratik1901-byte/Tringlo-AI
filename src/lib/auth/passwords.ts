@@ -1,5 +1,5 @@
 // ============================================================
-// Dialo AI — Password Hashing
+// Tringlo AI — Password Hashing
 // ============================================================
 //
 // scrypt from Node's own crypto, so adding real authentication costs no new

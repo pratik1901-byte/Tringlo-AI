@@ -1,7 +1,7 @@
 "use client";
 
 // ============================================================
-// Dialo AI — Motion
+// Tringlo AI — Motion
 // ============================================================
 // A small set of GSAP primitives shared by every page, so motion reads as one
 // system rather than per-screen improvisation.

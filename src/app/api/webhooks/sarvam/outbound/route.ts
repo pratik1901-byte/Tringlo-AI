@@ -10,8 +10,14 @@ import {
 } from "@/lib/security/webhook-auth";
 import type { SarvamWebhookPayload } from "@/lib/providers/sarvam/types";
 
-/** Generous enough for Sarvam's retries, tight enough to blunt a flood. */
-const RATE_LIMIT = 120;
+/**
+ * Two limits. Requests that fail authentication are held tight, which is what
+ * blunts a flood. Authenticated deliveries get far more room: a campaign
+ * dialling a couple of numbers a second reports every attempt here, and a
+ * refused result is a lost result.
+ */
+const UNAUTHENTICATED_LIMIT = 120;
+const AUTHENTICATED_LIMIT = 3000;
 const RATE_WINDOW_MS = 60_000;
 
 /**
@@ -19,27 +25,28 @@ const RATE_WINDOW_MS = 60_000;
  *
  * The only way a call acquires a result.
  *
- * Answers 2xx for anything well-formed that Dialo has accepted responsibility
+ * Answers 2xx for anything well-formed that Tringlo has accepted responsibility
  * for — including duplicates and events it chose not to apply — because a
  * non-2xx makes Sarvam retry an event that was received correctly. A 5xx is
  * reserved for the one case where a retry is genuinely wanted: the event was
- * valid but Dialo failed to store it.
+ * valid but Tringlo failed to store it.
  */
 export async function POST(request: NextRequest) {
   const startedAt = Date.now();
 
-  // --- Rate limit ---
-  const limit = rateLimit(clientKey(request, "webhook"), RATE_LIMIT, RATE_WINDOW_MS);
+  // --- Authenticate, then rate-limit by whether that succeeded ---
+  const auth = authenticateWebhook(request);
+  const limit = auth.ok
+    ? rateLimit(clientKey(request, "webhook"), AUTHENTICATED_LIMIT, RATE_WINDOW_MS)
+    : rateLimit(clientKey(request, "webhook-unauth"), UNAUTHENTICATED_LIMIT, RATE_WINDOW_MS);
   if (!limit.allowed) {
-    console.warn("WEBHOOK_RATE_LIMITED");
+    console.warn(`WEBHOOK_RATE_LIMITED authenticated=${auth.ok}`);
     return NextResponse.json(
       { error: "Too many requests." },
       { status: 429, headers: { "Retry-After": String(limit.retryAfter) } }
     );
   }
 
-  // --- Authenticate ---
-  const auth = authenticateWebhook(request);
   if (!auth.ok) {
     // The reason is logged but not returned: an unauthenticated caller learns
     // only that it was rejected.

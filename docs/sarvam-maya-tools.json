@@ -1,0 +1,69 @@
+{
+  "_comment": "Tool/function definitions for Maya's Sarvam app (Amrita---We-4517816a-a47a). Register these in the Sarvam dashboard's tool/function-calling editor for the OUTBOUND and INBOUND agent versions used on calls. Each tool makes an HTTP call to Tringlo's deterministic backend, which runs the real database operation and returns a structured result. Field names here follow the common JSON-Schema function-calling shape; map them to Sarvam's tool editor fields as needed. Do NOT paste the token into source control — read it from the hospital workspace's webhook token.",
+  "endpoint": {
+    "method": "POST",
+    "url": "{WEBHOOK_BASE_URL}/api/hospital/agent-tools",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer {WELLNESS_WEBHOOK_TOKEN}"
+    },
+    "auth_alternative": "If Sarvam's tool config cannot send a header, append ?k={WELLNESS_WEBHOOK_TOKEN} to the url instead (less preferred — keeps the token out of logs only with the header).",
+    "request_body_template": { "tool": "<tool_name>", "args": "<arguments object>" },
+    "response_envelope": {
+      "ok": "boolean — true if the operation succeeded",
+      "data": "object — present when ok:true; speak from this",
+      "error": "string — present when ok:false; explain this to the caller",
+      "code": "string — machine-readable failure code when ok:false",
+      "tookMs": "number — backend execution time",
+      "correlationId": "string — ties the call to Tringlo's logs"
+    },
+    "notes": "A failed tool still returns HTTP 200 with ok:false — read `ok`, never the HTTP status. Typical response time is single-digit milliseconds; wait for the result before speaking."
+  },
+  "tools": [
+    {
+      "name": "get_doctors",
+      "description": "List the hospital's doctors and their specialties. Use when the caller asks who is available or wants to choose a doctor.",
+      "parameters": { "type": "object", "properties": {}, "required": [] }
+    },
+    {
+      "name": "search_doctors",
+      "description": "Find doctors by name, specialty or department. Use when the caller names a specialty (e.g. 'a cardiologist') or a doctor.",
+      "parameters": { "type": "object", "properties": { "query": { "type": "string", "description": "Specialty, department or doctor name" } }, "required": ["query"] }
+    },
+    {
+      "name": "check_doctor_availability",
+      "description": "Check a doctor's genuinely free appointment slots on a specific date. Always call this before offering any time; never invent availability.",
+      "parameters": { "type": "object", "properties": { "doctor_id": { "type": "string" }, "date": { "type": "string", "description": "YYYY-MM-DD in Asia/Kolkata" } }, "required": ["doctor_id", "date"] }
+    },
+    {
+      "name": "get_available_slots",
+      "description": "Get available slots for a doctor (or specialty) across a range of upcoming days. Use when the caller is flexible on the date.",
+      "parameters": { "type": "object", "properties": { "doctor_id": { "type": "string" }, "specialty": { "type": "string" }, "from_date": { "type": "string", "description": "YYYY-MM-DD; defaults to today" }, "days": { "type": "integer", "description": "How many days ahead to scan (1-14)" } }, "required": [] }
+    },
+    {
+      "name": "book_appointment",
+      "description": "Book an appointment in a verified free slot. Only call after reading the details back and getting the caller's explicit confirmation. Returns the real appointment reference id on success.",
+      "parameters": { "type": "object", "properties": { "patient_name": { "type": "string" }, "patient_phone": { "type": "string" }, "doctor_id": { "type": "string" }, "appointment_date": { "type": "string", "description": "YYYY-MM-DD" }, "appointment_time": { "type": "string", "description": "HH:MM, 24-hour" }, "reason": { "type": "string" } }, "required": ["patient_name", "patient_phone", "doctor_id", "appointment_date", "appointment_time"] }
+    },
+    {
+      "name": "get_patient_appointments",
+      "description": "Retrieve a caller's existing appointments by their phone number.",
+      "parameters": { "type": "object", "properties": { "patient_phone": { "type": "string" } }, "required": ["patient_phone"] }
+    },
+    {
+      "name": "reschedule_appointment",
+      "description": "Move an existing appointment to a new, genuinely free slot. Confirm the new time with the caller first. Preserves the original in history.",
+      "parameters": { "type": "object", "properties": { "appointment_id": { "type": "string" }, "new_date": { "type": "string", "description": "YYYY-MM-DD" }, "new_time": { "type": "string", "description": "HH:MM" } }, "required": ["appointment_id", "new_date", "new_time"] }
+    },
+    {
+      "name": "cancel_appointment",
+      "description": "Cancel an appointment. Only call with confirm:true after the caller has explicitly agreed to cancel.",
+      "parameters": { "type": "object", "properties": { "appointment_id": { "type": "string" }, "confirm": { "type": "boolean", "description": "Must be true; set only after explicit caller confirmation" }, "reason": { "type": "string" } }, "required": ["appointment_id", "confirm"] }
+    },
+    {
+      "name": "get_appointment_details",
+      "description": "Retrieve one appointment's details. Pass the caller's phone to verify ownership before reading anything out.",
+      "parameters": { "type": "object", "properties": { "appointment_id": { "type": "string" }, "patient_phone": { "type": "string" } }, "required": ["appointment_id"] }
+    }
+  ]
+}

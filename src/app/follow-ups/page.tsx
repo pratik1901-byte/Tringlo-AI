@@ -13,6 +13,8 @@ import {
   formatDateTime,
   formatFollowUpStatus,
   formatInterest,
+  formatLabel,
+  formatPhone,
   formatText,
 } from "@/lib/format";
 import {
@@ -106,7 +108,7 @@ export default function FollowUpsPage() {
       {counts.needsTime > 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
           {counts.needsTime} {counts.needsTime === 1 ? "customer" : "customers"} asked for a callback
-          without giving a usable date and time. Dialo will not guess one — set a time to schedule
+          without giving a usable date and time. Tringlo will not guess one — set a time to schedule
           the call.
         </div>
       )}
@@ -139,7 +141,7 @@ export default function FollowUpsPage() {
                       <div className="min-w-0">
                         <p className="truncate font-medium leading-tight">{followUp.lead.name}</p>
                         <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
-                          {followUp.lead.phone}
+                          {formatPhone(followUp.lead.phone)}
                         </p>
                       </div>
                       <Tag tone={tone}>{label}</Tag>
@@ -212,7 +214,6 @@ export default function FollowUpsPage() {
                   <th className="px-4 py-3">What they said</th>
                   <th className="px-4 py-3">Interest</th>
                   <th className="px-4 py-3">Scheduled</th>
-                  <th className="hidden px-4 py-3 lg:table-cell">Timezone</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="hidden px-4 py-3 xl:table-cell">Next action</th>
                   <th className="px-5 py-3 text-right">Actions</th>
@@ -239,7 +240,7 @@ export default function FollowUpsPage() {
                           )}
                         </td>
                         <td className="px-4 py-3.5 font-mono text-xs text-muted-foreground">
-                          {followUp.lead.phone}
+                          {formatPhone(followUp.lead.phone)}
                         </td>
                         <td
                           className="max-w-[260px] truncate px-4 py-3.5 text-xs text-muted-foreground"
@@ -255,6 +256,9 @@ export default function FollowUpsPage() {
                               title={followUp.interpretation ?? undefined}
                             >
                               {formatDateTime(followUp.scheduledTime)}
+                              {followUp.timezone && (
+                                <span className="ml-1.5 text-[11px] text-muted-foreground">{followUp.timezone}</span>
+                              )}
                             </span>
                           ) : (
                             <span
@@ -269,9 +273,6 @@ export default function FollowUpsPage() {
                             </span>
                           )}
                         </td>
-                        <td className="hidden px-4 py-3.5 text-xs text-muted-foreground lg:table-cell">
-                          {formatText(followUp.timezone)}
-                        </td>
                         <td className="px-4 py-3.5">
                           <Tag tone={tone}>{label}</Tag>
                         </td>
@@ -279,7 +280,7 @@ export default function FollowUpsPage() {
                           className="hidden max-w-[200px] truncate px-4 py-3.5 text-xs text-muted-foreground xl:table-cell"
                           title={followUp.nextAction ?? undefined}
                         >
-                          {formatText(followUp.nextAction)}
+                          {formatLabel(followUp.nextAction)}
                         </td>
                         <td className="px-5 py-3.5 text-right">
                           <div className="flex items-center justify-end gap-3">
@@ -364,9 +365,9 @@ function SummaryTile({
   tone?: "neutral" | "warning" | "negative";
 }) {
   return (
-    <div className="rounded-lg border bg-card p-5">
+    <div className="rounded-xl border bg-card p-5">
       <p
-        className={`font-heading text-3xl font-semibold tabular-nums tracking-tight ${
+        className={`font-serif leading-none tracking-[-0.01em] [font-variant-numeric:lining-nums_tabular-nums] text-[40px] ${
           tone === "negative"
             ? "text-red-600 dark:text-red-400"
             : tone === "warning"
@@ -376,7 +377,7 @@ function SummaryTile({
       >
         {value}
       </p>
-      <p className="mt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+      <p className="mt-3 text-[12.5px] font-medium text-muted-foreground">
         {label}
       </p>
     </div>
@@ -500,7 +501,7 @@ function EditFollowUpDialog({
       <div className="space-y-4 px-6 py-5">
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">
-            {followUp.lead.name} · <span className="font-mono text-xs">{followUp.lead.phone}</span>
+            {followUp.lead.name} · <span className="font-mono text-xs">{formatPhone(followUp.lead.phone)}</span>
           </p>
           <Tag tone={inFlight ? "pending" : "neutral"}>{formatFollowUpStatus(followUp.status)}</Tag>
         </div>

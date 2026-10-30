@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Flutter's generated web bundle and tool cache, not source.
+    "flutter_app/build/**",
+    "flutter_app/.dart_tool/**",
+    // The compiled Flutter web client served at /app.
+    "public/app/**",
   ]),
 ]);
 

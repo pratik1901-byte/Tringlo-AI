@@ -1,5 +1,5 @@
 // ============================================================
-// Dialo AI — "Is this request from this machine?"
+// Tringlo AI — "Is this request from this machine?"
 // ============================================================
 //
 // Used by first-run setup, which lets the person sitting at the server create

@@ -1,14 +1,14 @@
 // ============================================================
-// Dialo AI — Email Templates
+// Tringlo AI — Email Templates
 // ============================================================
 //
-// The four emails Dialo sends. Each builder returns the subject, the HTML and
+// The four emails Tringlo sends. Each builder returns the subject, the HTML and
 // a plain-text version together, so the two bodies are written side by side
 // and cannot drift apart — mail clients that show plain text (and spam
 // filters, which score its absence) get the same content.
 //
 // Every figure comes from real call data passed in by the caller. A field
-// Dialo has no value for is left out, never shown blank or filled in.
+// Tringlo has no value for is left out, never shown blank or filled in.
 // ============================================================
 
 import {
@@ -135,7 +135,10 @@ function versusYesterday(today: number, yesterday: number | null): { note: strin
 
 export interface OtpEmailInput {
   name: string | null;
+  /** The address the code is for — for an email change, the new address. */
   email: string;
+  /** What the code unlocks. Defaults to a password reset. */
+  purpose?: "password_reset" | "email_change";
   code: string;
   expiresInMinutes: number;
   expiresAt: string;
@@ -143,6 +146,24 @@ export interface OtpEmailInput {
 }
 
 export function otpEmail(input: OtpEmailInput): BuiltEmail {
+  const changingEmail = input.purpose === "email_change";
+  const copy = changingEmail
+    ? {
+        eyebrow: "Email change",
+        action: "confirm this as your new sign-in email",
+        reason: `You're receiving this because someone asked to change a Tringlo AI sign-in email to ${input.email}.`,
+        ignore: "Ignore this email &mdash; nothing changes.",
+        ignoreText: "Ignore this email - nothing changes.",
+        footer: "The code works once. Your password stays the same, and you stay signed in.",
+      }
+    : {
+        eyebrow: "Password reset",
+        action: "set a new password",
+        reason: `You're receiving this because a password reset was requested for ${input.email} on Tringlo AI.`,
+        ignore: "Ignore this email &mdash; your password stays the same.",
+        ignoreText: "Ignore this email - your password stays the same.",
+        footer: "The code works once. Setting a new password signs you out on every other device.",
+      };
   const spaced = `${input.code.slice(0, 3)} ${input.code.slice(3)}`;
   const expiry = clockTime(input.expiresAt, input.timeZone);
   const greeting = input.name ? `Hi ${esc(firstName(input.name))},` : "Hi,";
@@ -155,26 +176,28 @@ export function otpEmail(input: OtpEmailInput): BuiltEmail {
 </td></tr></table>`;
 
   const html = renderEmail({
-    preheader: `Use ${spaced} to reset your Dialo password. It expires in ${input.expiresInMinutes} minutes.`,
+    preheader: `Use ${spaced} to ${copy.action}. It expires in ${input.expiresInMinutes} minutes.`,
     context: "Security",
-    eyebrow: "Password reset",
+    eyebrow: copy.eyebrow,
     title: "Your verification code",
-    reason: `You're receiving this because a password reset was requested for ${input.email} on Dialo AI.`,
+    reason: copy.reason,
     bodyHtml:
       paragraph(greeting, { spaceAfter: 8 }) +
       paragraph(
-        `Enter this code in Dialo to set a new password for <strong class="t-ink" style="color:${BRAND.ink};">${esc(input.email)}</strong>.`,
+        changingEmail
+          ? `Enter this code in Tringlo to confirm <strong class="t-ink" style="color:${BRAND.ink};">${esc(input.email)}</strong> as your new sign-in email.`
+          : `Enter this code in Tringlo to set a new password for <strong class="t-ink" style="color:${BRAND.ink};">${esc(input.email)}</strong>.`,
         { spaceAfter: 24 }
       ) +
       codeBox +
       spacer(24) +
       callout(
-        `<strong class="t-ink" style="color:${BRAND.ink};">Didn&rsquo;t ask for this?</strong> Ignore this email &mdash; your password stays the same. Dialo will never ask you for this code by phone, email or chat.`,
+        `<strong class="t-ink" style="color:${BRAND.ink};">Didn&rsquo;t ask for this?</strong> ${copy.ignore} Tringlo will never ask you for this code by phone, email or chat.`,
         "info"
       ) +
       spacer(20) +
       paragraph(
-        "The code works once. Setting a new password signs you out on every other device.",
+        copy.footer,
         { muted: true, size: 13, spaceAfter: 0 }
       ),
   });
@@ -182,18 +205,150 @@ export function otpEmail(input: OtpEmailInput): BuiltEmail {
   const text = [
     `${input.name ? `Hi ${firstName(input.name)},` : "Hi,"}`,
     "",
-    `Your Dialo verification code is: ${spaced}`,
+    `Your Tringlo verification code is: ${spaced}`,
     "",
-    `Enter it in Dialo to set a new password for ${input.email}.`,
+    changingEmail
+      ? `Enter it in Tringlo to confirm ${input.email} as your new sign-in email.`
+      : `Enter it in Tringlo to set a new password for ${input.email}.`,
     `It expires in ${input.expiresInMinutes} minutes${expiry ? ` (at ${expiry})` : ""} and works once.`,
     "",
-    "Didn't ask for this? Ignore this email - your password stays the same.",
-    "Dialo will never ask you for this code by phone, email or chat.",
+    `Didn't ask for this? ${copy.ignoreText}`,
+    "Tringlo will never ask you for this code by phone, email or chat.",
     "",
-    "-- Dialo AI",
+    "-- Tringlo AI",
   ].join("\n");
 
-  return { subject: `${spaced} is your Dialo verification code`, html, text };
+  return { subject: `${spaced} is your Tringlo verification code`, html, text };
+}
+
+// ------------------------------------------------------------------
+// 1b. Account change notice
+// ------------------------------------------------------------------
+
+export interface AccountChangedInput {
+  name: string | null;
+  change: "email" | "password";
+  /** For an email change: the address the account moved away from and to. */
+  oldEmail?: string;
+  newEmail?: string;
+  at: string;
+  timeZone: string;
+}
+
+/**
+ * Tells someone their sign-in details changed.
+ *
+ * Sent to the address that was on the account before the change, so if it
+ * was not them, the person who can do something about it hears first.
+ */
+export function accountChangedEmail(input: AccountChangedInput): BuiltEmail {
+  const greeting = input.name ? `Hi ${esc(firstName(input.name))},` : "Hi,";
+  const when = new Intl.DateTimeFormat("en-IN", {
+    timeZone: input.timeZone,
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(new Date(input.at));
+  const isEmail = input.change === "email";
+  const what = isEmail ? "sign-in email" : "password";
+
+  const html = renderEmail({
+    preheader: `Your Tringlo ${what} was changed on ${when}.`,
+    context: "Security",
+    eyebrow: "Account change",
+    title: `Your ${what} was changed`,
+    reason: `You're receiving this because the ${what} on your Tringlo AI account changed.`,
+    bodyHtml:
+      paragraph(greeting, { spaceAfter: 8 }) +
+      paragraph(
+        isEmail
+          ? "The email you use to sign in to Tringlo has been changed. From now on, sign in and receive codes at the new address."
+          : "The password for your Tringlo account has just been changed. Every other device was signed out.",
+        { spaceAfter: 20 }
+      ) +
+      detailsTable([
+        { label: "Changed", valueHtml: esc(when) },
+        isEmail ? { label: "Previous email", valueHtml: esc(input.oldEmail ?? "") } : { label: "", valueHtml: null },
+        isEmail ? { label: "New email", valueHtml: esc(input.newEmail ?? "") } : { label: "", valueHtml: null },
+      ]) +
+      spacer(20) +
+      callout(
+        `<strong class="t-ink" style="color:${BRAND.ink};">Wasn&rsquo;t you?</strong> Reset your password from the Tringlo sign-in page straight away, and check who has access to the machine running Tringlo.`,
+        "warning"
+      ),
+  });
+
+  const text = [
+    input.name ? `Hi ${firstName(input.name)},` : "Hi,",
+    "",
+    isEmail
+      ? `The email you use to sign in to Tringlo changed from ${input.oldEmail} to ${input.newEmail} on ${when}.`
+      : `The password for your Tringlo account was changed on ${when}. Every other device was signed out.`,
+    "",
+    "Wasn't you? Reset your password from the Tringlo sign-in page straight away.",
+    "",
+    "-- Tringlo AI",
+  ].join("\n");
+
+  return { subject: `Your Tringlo ${what} was changed`, html, text };
+}
+
+// ------------------------------------------------------------------
+// 1c. Contact form message
+// ------------------------------------------------------------------
+
+export interface ContactMessageInput {
+  name: string;
+  email: string;
+  company: string | null;
+  topic: string;
+  message: string;
+  at: string;
+  timeZone: string;
+}
+
+/** A website contact-form submission, for the business's own inbox. */
+export function contactMessageEmail(input: ContactMessageInput): BuiltEmail {
+  const when = new Intl.DateTimeFormat("en-IN", {
+    timeZone: input.timeZone,
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(new Date(input.at));
+  const messageHtml = esc(input.message).replace(/\n/g, "<br>");
+
+  const html = renderEmail({
+    preheader: `${input.topic} from ${input.name}: ${input.message.slice(0, 80)}`,
+    context: "Website",
+    eyebrow: "Contact form",
+    title: input.topic,
+    reason: "You're receiving this because someone used the contact form on your website.",
+    bodyHtml:
+      detailsTable([
+        { label: "From", valueHtml: esc(input.name) },
+        { label: "Email", valueHtml: `<a href="mailto:${esc(input.email)}" style="color:${BRAND.iris};">${esc(input.email)}</a>` },
+        { label: "Company", valueHtml: input.company ? esc(input.company) : null },
+        { label: "Sent", valueHtml: esc(when) },
+      ]) +
+      spacer(20) +
+      callout(`<span class="t-ink" style="color:${BRAND.ink};">${messageHtml}</span>`, "neutral") +
+      spacer(16) +
+      paragraph("Reply to this email to answer them directly. The message is not stored anywhere else.", { muted: true, size: 13, spaceAfter: 0 }),
+  });
+
+  const text = [
+    `${input.topic} — from ${input.name} <${input.email}>${input.company ? ` (${input.company})` : ""}`,
+    `Sent ${when}`,
+    "",
+    input.message,
+  ].join("\n");
+
+  return { subject: `${input.topic}: ${input.name}`, html, text };
 }
 
 // ------------------------------------------------------------------
@@ -216,7 +371,7 @@ export function testEmail(input: TestEmailInput): BuiltEmail {
   const sent = `${sentDay} · ${clockTime(input.sentAt, input.timeZone)}`;
 
   const html = renderEmail({
-    preheader: `Dialo can deliver to ${input.recipient}. Here's what you'll receive at this address.`,
+    preheader: `Tringlo can deliver to ${input.recipient}. Here's what you'll receive at this address.`,
     context: "Test",
     eyebrow: "Email delivery",
     title: "Your email is working",
@@ -224,7 +379,7 @@ export function testEmail(input: TestEmailInput): BuiltEmail {
     reason: `You're receiving this because Send test email was pressed in ${input.workspace}'s notification settings.`,
     bodyHtml:
       paragraph(
-        `This is a test from <strong class="t-ink" style="color:${BRAND.ink};">${esc(input.workspace)}</strong>. If you can read it, Dialo can deliver to this address &mdash; no further setup needed.`,
+        `This is a test from <strong class="t-ink" style="color:${BRAND.ink};">${esc(input.workspace)}</strong>. If you can read it, Tringlo can deliver to this address &mdash; no further setup needed.`,
         { spaceAfter: 24 }
       ) +
       sectionLabel("What you'll receive here") +
@@ -256,19 +411,19 @@ export function testEmail(input: TestEmailInput): BuiltEmail {
   });
 
   const text = [
-    "Your Dialo email is working.",
+    "Your Tringlo email is working.",
     "",
-    `This is a test from ${input.workspace}. If you can read it, Dialo can deliver to ${input.recipient}.`,
+    `This is a test from ${input.workspace}. If you can read it, Tringlo can deliver to ${input.recipient}.`,
     "",
     `Interested-lead alerts: ${input.emailAlerts ? "On" : "Off"}`,
     `Daily summary: ${input.dailySummary ? `On, every day at ${input.summaryTime}` : "Off"}`,
     "",
     `Sent at ${sent}.`,
     "",
-    "-- Dialo AI",
+    "-- Tringlo AI",
   ].join("\n");
 
-  return { subject: "Your Dialo email is working", html, text };
+  return { subject: "Your Tringlo email is working", html, text };
 }
 
 // ------------------------------------------------------------------
@@ -340,7 +495,7 @@ export function interestedEmail(input: InterestedEmailInput): BuiltEmail {
     ].filter((line): line is string => Boolean(line)),
     ...(input.summary ? ["", "What happened on the call:", input.summary] : []),
     "",
-    "-- Dialo AI",
+    "-- Tringlo AI",
   ].join("\n");
 
   return { subject: `Interested lead: ${input.name}`, html, text };
@@ -394,7 +549,7 @@ ${lead.nextStep ? `<p class="t-muted" style="margin:3px 0 0;font-family:-apple-s
     input.tomorrow.length === 0
       ? paragraph("No callbacks are scheduled for tomorrow.", { muted: true, size: 14, spaceAfter: 0 })
       : paragraph(
-          `${plural(input.tomorrow.length, "callback")} scheduled &mdash; Dialo will place ${
+          `${plural(input.tomorrow.length, "callback")} scheduled &mdash; Tringlo will place ${
             input.tomorrow.length === 1 ? "it" : "them"
           } automatically.`,
           { size: 14, spaceAfter: 10 }
@@ -443,7 +598,7 @@ ${lead.nextStep ? `<p class="t-muted" style="margin:3px 0 0;font-family:-apple-s
       spacer(30) +
       sectionLabel("How calls ended") +
       outcomeBar([
-        { label: "Connected", count: input.connected, color: BRAND.indigo },
+        { label: "Connected", count: input.connected, color: BRAND.irisBright },
         { label: "Not picked", count: input.notPicked, color: BRAND.slate },
         { label: "Busy / declined", count: input.busy, color: BRAND.warning },
         { label: "Call failed", count: input.failed, color: BRAND.negative },
@@ -468,7 +623,7 @@ ${lead.nextStep ? `<p class="t-muted" style="margin:3px 0 0;font-family:-apple-s
   });
 
   const text = [
-    `Dialo daily report - ${day}`,
+    `Tringlo daily report - ${day}`,
     input.workspace,
     "",
     ...(quiet
@@ -497,7 +652,7 @@ ${lead.nextStep ? `<p class="t-muted" style="margin:3px 0 0;font-family:-apple-s
         )
       : ["  No callbacks scheduled"]),
     "",
-    "-- Dialo AI",
+    "-- Tringlo AI",
   ].join("\n");
 
   const subject = quiet

@@ -68,7 +68,7 @@ export default function AnalyticsPage() {
   const kpiRef = useReveal<HTMLDivElement>({ deps: [Boolean(metrics)] });
   const chartsRef = useReveal<HTMLDivElement>({ delay: 0.1, deps: [Boolean(metrics)] });
 
-  const description = "Performance across every call Sarvam has reported";
+  const description = "Performance across the calls Tringlo placed. Calls you received are on the Inbound page.";
 
   if (isLoading && !metrics) {
     return (

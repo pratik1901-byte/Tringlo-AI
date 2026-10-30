@@ -44,6 +44,8 @@ next-env.d.ts
 /data/database.json
 /data/database.json.tmp
 /data/recordings/
+# Backups of the local database: customer data and password hashes.
+/data/backups/
 
 # Flutter
 /flutter_app/build/
@@ -51,3 +53,6 @@ next-env.d.ts
 /flutter_app/.flutter-plugins-dependencies
 # Compiled Flutter web app, produced from flutter_app/ by scripts/build-web.mjs
 /public/app/
+
+# Per-install workspace setup applied at startup (Sarvam ids, no secrets)
+data/workspace-setup.json

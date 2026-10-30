@@ -1,5 +1,5 @@
 // ============================================================
-// Dialo AI — Customer Identity
+// Tringlo AI — Customer Identity
 // ============================================================
 //
 // Memory is only useful if the same person resolves to the same profile on
@@ -127,9 +127,4 @@ export function namesLikelyMatch(a: string, b: string): boolean {
   return first.some((token) => second.includes(token));
 }
 
-/** A generic placeholder rather than a name someone actually gave. */
-export function isPlaceholderName(name: string | null | undefined): boolean {
-  const value = (name ?? "").trim().toLowerCase();
-  if (!value) return true;
-  return ["customer", "unknown", "lead", "test", "n/a", "na", "-"].includes(value);
-}
+export { isPlaceholderName } from "./placeholder";

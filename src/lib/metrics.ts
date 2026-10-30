@@ -1,5 +1,5 @@
 // ============================================================
-// Dialo AI — Metric Computation
+// Tringlo AI — Metric Computation
 // ============================================================
 // Every number the dashboard and analytics pages display is computed here from
 // stored call records. There are no targets, baselines or "vs last month" deltas
@@ -42,7 +42,7 @@ export function isFinished(record: CallRecord): boolean {
   return record.status !== "initiating" && record.status !== "calling";
 }
 
-/** The moment a call happened, preferring the provider's clock over Dialo's. */
+/** The moment a call happened, preferring the provider's clock over Tringlo's. */
 export function callTime(record: CallRecord): number | null {
   const raw = record.startedAt || record.requestedAt;
   if (!raw) return null;
@@ -203,6 +203,15 @@ export function computeCallMetrics(
     (followUp) => followUp.status !== "completed" && followUp.status !== "cancelled"
   );
 
+  // Pending counts cover every callback — one waiting for a time is work to do
+  // whichever way the call went. The rate below compares like with like: only
+  // callbacks that came out of the calls being measured, plus those added by
+  // hand, which belong to no call.
+  const callIds = new Set(records.map((record) => record.id));
+  const followUpsFromTheseCalls = followUps.filter(
+    (followUp) => !followUp.callId || callIds.has(followUp.callId)
+  );
+
   return {
     totalCalls: records.length,
     completedCalls: completed.length,
@@ -249,7 +258,7 @@ export function computeCallMetrics(
     ).length,
     unscheduledFollowUps: activeFollowUps.filter((followUp) => followUp.scheduledTime === null).length,
     completedFollowUps: followUps.filter((followUp) => followUp.status === "completed").length,
-    followUpRate: rate(followUps.length, connected.length),
+    followUpRate: rate(followUpsFromTheseCalls.length, connected.length),
 
     peakDay,
     averageCallsPerActiveDay:

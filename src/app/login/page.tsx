@@ -1,7 +1,7 @@
 "use client";
 
 // ============================================================
-// Dialo AI — Authentication
+// Tringlo AI — Authentication
 // ============================================================
 //
 // A centred panel over a living communication network.
@@ -19,10 +19,10 @@
 //
 // Password reset is by emailed code when the server has email configured:
 // request a six-digit code, then enter it with a new password. Without email
-// it falls back to the reset that only works from the machine running Dialo,
+// it falls back to the reset that only works from the machine running Tringlo,
 // so the ability to recover an account never disappears.
 //
-// What is deliberately absent: provider buttons, because Dialo has no OAuth.
+// What is deliberately absent: provider buttons, because Tringlo has no OAuth.
 // ============================================================
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -34,6 +34,7 @@ import { useAuthStore } from "@/lib/store";
 import { prefersReducedMotion } from "@/lib/animation";
 import { createAuthScene, type AuthScene } from "@/lib/auth-scene/timelines";
 import { CommunicationNetwork } from "@/components/auth/communication-network";
+import { CreateWorkspaceForm, type CreateWorkspacePayload } from "@/components/auth/create-workspace-form";
 
 type Mode = "signIn" | "signUp" | "reset";
 
@@ -55,8 +56,6 @@ export default function LoginPage() {
   const [setup, setSetup] = useState<SetupStatus | null>(null);
   const [mode, setMode] = useState<Mode>("signIn");
 
-  const [name, setName] = useState("");
-  const [businessName, setBusinessName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -71,6 +70,8 @@ export default function LoginPage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [density, setDensity] = useState<"full" | "reduced">("full");
+  /** Arrived from the website's "Sign up" where sign-up is not open. */
+  const [signupRequested, setSignupRequested] = useState(false);
 
   /** Reset by emailed code, rather than the machine-only fallback. */
   const emailReset = setup?.resetByEmail === true;
@@ -96,6 +97,13 @@ export default function LoginPage() {
       // Decided where the answer arrives rather than in an effect reacting to
       // it, which would be a render caused by a render.
       if (status.needsSetup && status.canSetupHere) setMode("signUp");
+
+      // "Sign up" on the public website lands here with ?mode=signup. Open the
+      // form where creating a workspace is allowed; elsewhere say how to get one.
+      if (new URLSearchParams(window.location.search).get("mode") === "signup") {
+        if (status.canSetupHere) setMode("signUp");
+        else setSignupRequested(true);
+      }
     } catch {
       setSetup({ needsSetup: false, canSetupHere: false });
     }
@@ -185,10 +193,6 @@ export default function LoginPage() {
     else if (mode !== "signIn" && password.length < MIN_PASSWORD_LENGTH)
       errors.password = `Use at least ${MIN_PASSWORD_LENGTH} characters.`;
 
-    if (mode === "signUp" && !businessName.trim()) {
-      errors.businessName = "Name your workspace.";
-    }
-
     if (mode !== "signIn" && !askingForCode && confirmPassword !== password) {
       errors.confirmPassword = "The passwords do not match.";
     }
@@ -198,14 +202,20 @@ export default function LoginPage() {
     return Object.keys(errors).length === 0;
   };
 
-  /** Only ever called once the server has issued a session. */
-  const enterApp = () => {
+  /**
+   * Only ever called once the server has issued a session.
+   *
+   * Where it goes depends on how many workspaces the account holds: one is not
+   * a choice and opens straight away, several mean the selector. The server
+   * decides which — this only follows where it points.
+   */
+  const enterApp = (destination = "/dashboard") => {
     const scene = sceneRef.current;
     if (!scene) {
-      router.replace("/dashboard");
+      router.replace(destination);
       return;
     }
-    scene.success(() => router.replace("/dashboard"));
+    scene.success(() => router.replace(destination));
   };
 
   const reject = (message: string) => {
@@ -244,6 +254,50 @@ export default function LoginPage() {
     }
   };
 
+  const [problems, setProblems] = useState<string[]>([]);
+
+  /**
+   * Creates the workspace from everything the form collected.
+   *
+   * The server validates the lot before writing a single row, and undoes the
+   * workspace if any part of the setup fails — so a refusal here means nothing
+   * was created and the form can simply be corrected.
+   */
+  const createWorkspace = async (payload: CreateWorkspacePayload) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    setProblems([]);
+
+    try {
+      const response = await fetch("/api/auth/bootstrap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setProblems(Array.isArray(body?.error?.problems) ? body.error.problems : []);
+        reject(body?.error?.message ?? "The workspace was not created.");
+        return;
+      }
+
+      const result = await signIn(payload.email, payload.password, true);
+      if (result.ok) {
+        await refresh();
+        enterApp();
+      } else {
+        setNotice("Workspace created. Sign in to continue.");
+        setMode("signIn");
+        setBusy(false);
+      }
+    } catch {
+      reject("Could not reach the server.");
+    }
+  };
+
   // ---------------------------------------------------------------- submit
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -262,35 +316,9 @@ export default function LoginPage() {
           return;
         }
         setPassword("");
-        enterApp();
-        return;
-      }
-
-      if (mode === "signUp") {
-        const response = await fetch("/api/auth/bootstrap", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password, name, businessName }),
-        });
-        const body = await response.json().catch(() => ({}));
-
-        if (!response.ok) {
-          reject(body?.error?.message ?? "Could not create the workspace.");
-          return;
-        }
-
-        const result = await signIn(email, password, remember);
-        setPassword("");
-        setConfirmPassword("");
-
-        if (result.ok) {
-          await refresh();
-          enterApp();
-        } else {
-          setNotice("Workspace created. Sign in to continue.");
-          setMode("signIn");
-          await loadSetupStatus();
-        }
+        // Always the selector, even with one workspace: which company you are
+        // working in should never be something the app decided for you.
+        enterApp("/workspaces");
         return;
       }
 
@@ -377,7 +405,7 @@ export default function LoginPage() {
 
       {/* The panel. Sits above the scene, and nothing in the scene is allowed
           to move it — the network reacts, the form stays put. */}
-      <div ref={panelRef} className="relative z-10 w-full max-w-[400px]">
+      <div ref={panelRef} className={`relative z-10 w-full ${mode === "signUp" ? "max-w-[620px]" : "max-w-[400px]"}`}>
         <div className="rounded-xl border border-border bg-card px-7 py-8 shadow-[0_1px_2px_rgba(0,0,0,0.04)] sm:px-8">
           {setup === null ? (
             <div className="flex h-56 items-center justify-center">
@@ -388,7 +416,7 @@ export default function LoginPage() {
             <div ref={contentRef}>
               <div data-field className="flex items-center gap-2.5">
                 <span className="h-5 w-[3px] rounded-full bg-primary" />
-                <span className="text-sm font-semibold tracking-tight text-foreground">Dialo</span>
+                <span className="text-sm font-semibold tracking-tight text-foreground">Tringlo</span>
               </div>
 
               <header data-field className="mt-6">
@@ -410,36 +438,26 @@ export default function LoginPage() {
               {firstRun && !canCreate && (
                 <Message tone="neutral">
                   No account exists yet. For safety, the first one can only be created from a
-                  browser on the machine running Dialo.
+                  browser on the machine running Tringlo.
                 </Message>
               )}
 
+              {mode === "signUp" ? (
+                <div className="mt-6">
+                  <CreateWorkspaceForm
+                    busy={busy}
+                    error={error}
+                    problems={problems}
+                    onSubmit={createWorkspace}
+                    onBackToSignIn={() => {
+                      setMode("signIn");
+                      setError(null);
+                      setProblems([]);
+                    }}
+                  />
+                </div>
+              ) : (
               <form className="mt-6 space-y-4" onSubmit={handleSubmit} noValidate>
-                {mode === "signUp" && (
-                  <>
-                    <Field
-                      id="businessName"
-                      label="Workspace"
-                      value={businessName}
-                      onChange={setBusinessName}
-                      onType={() => sceneRef.current?.pulse()}
-                      placeholder="Your company"
-                      error={fieldErrors.businessName}
-                      disabled={busy}
-                      autoComplete="organization"
-                    />
-                    <Field
-                      id="name"
-                      label="Your name"
-                      value={name}
-                      onChange={setName}
-                      onType={() => sceneRef.current?.pulse()}
-                      placeholder="Optional"
-                      disabled={busy}
-                      autoComplete="name"
-                    />
-                  </>
-                )}
 
                 <Field
                   id="email"
@@ -541,6 +559,7 @@ export default function LoginPage() {
                   </SubmitButton>
                 </div>
               </form>
+              )}
 
               <div data-field className="mt-6 border-t border-border pt-5 text-[13px]">
                 {mode === "signIn" ? (
@@ -550,8 +569,11 @@ export default function LoginPage() {
                       <SwitchLink onClick={() => switchMode("signUp")}>Create one</SwitchLink>
                     </p>
                   ) : (
-                    <p className="leading-relaxed text-muted-foreground">
-                      New workspaces are created from the machine running Dialo.
+                    <p className={signupRequested ? "leading-relaxed text-foreground" : "leading-relaxed text-muted-foreground"}>
+                      {signupRequested ? "Workspaces are set up on request. " : "New workspaces are created from the machine running Tringlo. "}
+                      <a href="/contact?topic=workspace" className="font-medium text-primary underline-offset-4 hover:underline">
+                        Request a workspace
+                      </a>
                     </p>
                   )
                 ) : (
@@ -582,7 +604,7 @@ export default function LoginPage() {
                 {mode === "reset" && !emailReset && (
                   <p className="mt-3 leading-relaxed text-muted-foreground">
                     Email is not set up on this server, so a password can only be changed from the
-                    machine running Dialo. Doing so signs out every existing session for that
+                    machine running Tringlo. Doing so signs out every existing session for that
                     account.
                   </p>
                 )}

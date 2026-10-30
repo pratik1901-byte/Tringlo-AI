@@ -1,0 +1,710 @@
+/* ============================================================
+   Public website — editorial system
+   Scoped to .site so nothing here reaches the application.
+   ============================================================ */
+
+.site {
+  color-scheme: light;
+  background: var(--color-cream);
+  color: var(--color-ink);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.site ::selection {
+  background: var(--color-lime);
+  color: var(--color-ink);
+}
+
+/* One focus style everywhere: a solid ink ring with a cream gap, visible on
+   every surface the site uses. */
+.site :where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+.site .on-ink :where(a, button, [tabindex]):focus-visible {
+  outline-color: var(--color-cream);
+}
+
+.site .serif {
+  font-family: var(--font-garamond), "EB Garamond", Georgia, serif;
+  font-weight: 400;
+  font-feature-settings: "liga", "kern", "onum";
+}
+
+.site .mono-label {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Blueprint paper: hairline grid, faint enough to read as texture. */
+.site .blueprint {
+  background-image:
+    linear-gradient(to right, rgba(23, 22, 20, 0.055) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(23, 22, 20, 0.055) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+.site .blueprint-ink {
+  background-image:
+    linear-gradient(to right, rgba(255, 252, 244, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 252, 244, 0.06) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* Skip link: off-screen until focused. */
+.site .skip-link {
+  position: absolute;
+  left: 16px;
+  top: -100px;
+  z-index: 100;
+  padding: 10px 14px;
+  background: var(--color-ink);
+  color: var(--color-cream);
+  border-radius: 4px;
+}
+.site .skip-link:focus {
+  top: 12px;
+}
+
+/* Horizontal track: a native scroller (touch, trackpad, keyboard) that the
+   desktop scroll-scrubbed version replaces only when motion is welcome. */
+.site .h-track {
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-stone-deep) transparent;
+}
+.site .h-track > * {
+  scroll-snap-align: start;
+}
+
+/* Legal prose. */
+.site .prose-legal h2 {
+  font-family: var(--font-garamond), Georgia, serif;
+  font-size: 28px;
+  line-height: 36px;
+  letter-spacing: -0.01em;
+  margin: 48px 0 12px;
+  scroll-margin-top: 96px;
+}
+.site .prose-legal h3 {
+  font-size: 16px;
+  font-weight: 500;
+  margin: 24px 0 8px;
+}
+.site .prose-legal p,
+.site .prose-legal li {
+  font-size: 15px;
+  line-height: 26px;
+  color: var(--color-ink-muted);
+}
+.site .prose-legal p + p {
+  margin-top: 12px;
+}
+.site .prose-legal ul {
+  list-style: disc;
+  padding-left: 20px;
+  margin: 8px 0 12px;
+}
+.site .prose-legal li + li {
+  margin-top: 6px;
+}
+.site .prose-legal a {
+  color: var(--color-iris-deep);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.site .prose-legal strong {
+  color: var(--color-ink);
+  font-weight: 500;
+}
+.site .prose-legal table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0 16px;
+  font-size: 14px;
+}
+.site .prose-legal th,
+.site .prose-legal td {
+  border: 1px solid var(--color-stone);
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+  color: var(--color-ink-muted);
+}
+.site .prose-legal th {
+  background: var(--color-parchment);
+  color: var(--color-ink);
+  font-weight: 500;
+}
+
+/* A value the business still has to supply. */
+.site .tbc {
+  background: var(--color-lime);
+  color: var(--color-ink);
+  padding: 0 4px;
+  border-radius: 2px;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.9em;
+}
+
+
+/* ============================================================
+   Type scale — one set of sizes the whole page shares, so headings line up
+   from section to section instead of each picking its own.
+   ============================================================ */
+.site .t-display {
+  font-family: var(--font-garamond), "EB Garamond", Georgia, serif;
+  font-weight: 400;
+  font-size: clamp(44px, 5.4vw, 86px);
+  line-height: 1;
+  letter-spacing: -0.025em;
+}
+.site .t-title {
+  font-family: var(--font-garamond), "EB Garamond", Georgia, serif;
+  font-weight: 400;
+  font-size: clamp(36px, 4.4vw, 66px);
+  line-height: 1.04;
+  letter-spacing: -0.02em;
+}
+.site .t-lede {
+  font-size: clamp(17px, 1.35vw, 20px);
+  line-height: 1.6;
+}
+.site .t-statement {
+  font-family: var(--font-garamond), "EB Garamond", Georgia, serif;
+  font-size: clamp(30px, 3.5vw, 54px);
+  line-height: 1.18;
+  letter-spacing: -0.015em;
+}
+.site em.accent {
+  font-style: italic;
+  color: var(--color-iris-deep);
+}
+.site .on-ink em.accent {
+  color: var(--color-lime);
+}
+
+/* One container rule, so every section's left edge is the same line. */
+.site .frame {
+  width: 100%;
+  max-width: 1320px;
+  margin-inline: auto;
+  padding-inline: 20px;
+}
+@media (min-width: 768px) {
+  .site .frame {
+    padding-inline: 32px;
+  }
+}
+/* One vertical rhythm for section padding. */
+.site .band {
+  padding-block: clamp(88px, 11vw, 168px);
+}
+
+/* SplitText line masks: room for descenders and italic overhang, so a
+   rising line is never clipped at its tail. */
+.site .split-line {
+  padding-bottom: 0.08em;
+  margin-bottom: -0.08em;
+}
+
+/* ============================================================
+   Hero intro. When JavaScript is running and motion is welcome, the hero is
+   held back until GSAP brings it in — so it never flashes in, out, and in
+   again on load. Two guarantees keep that safe: the class is only set by a
+   script, so without JavaScript nothing is hidden; and a failsafe brings it
+   back after 2.4s even if GSAP never runs.
+   ============================================================ */
+@keyframes site-intro-failsafe {
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .site-js .site [data-intro] {
+    opacity: 0;
+    animation: site-intro-failsafe 0.01s linear 2.4s forwards;
+  }
+}
+
+/* A small pulse for the live dot. CSS, not GSAP: it is decoration, and it
+   stops for reduced motion through the rule at the end of this file. */
+@keyframes site-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(var(--pulse-rgb, 232 240 86) / 0.75); }
+  70% { box-shadow: 0 0 0 7px rgb(var(--pulse-rgb, 232 240 86) / 0); }
+}
+.site .live-dot {
+  animation: site-pulse 1.8s ease-out infinite;
+}
+
+/* ============================================================
+   "How it works" story. By default every step carries its own picture,
+   stacked — that is the mobile, reduced-motion and no-JavaScript version.
+   On a large screen with motion, GSAP marks the section enhanced: the inline
+   pictures give way to one sticky stage that changes as each step is read.
+   ============================================================ */
+.site .story-stage {
+  display: none;
+}
+.site .story[data-enhanced] .story-inline {
+  display: none;
+}
+.site .story[data-enhanced] .story-stage {
+  display: block;
+}
+.site .story[data-enhanced] .story-step {
+  min-height: 78vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+/* The first step starts level with the top of the stage, so the section
+   opens with text and picture side by side rather than a gap on the left. */
+.site .story[data-enhanced] .story-step:first-child {
+  justify-content: flex-start;
+  min-height: 62vh;
+}
+.site .story-step .story-step-copy {
+  transition: opacity 0.5s ease;
+}
+.site .story[data-enhanced] .story-step:not([data-active]) .story-step-copy {
+  opacity: 0.32;
+}
+
+/* Use cases: every panel shares one grid cell, so switching never changes
+   the height of the page under the reader. */
+.site .stack {
+  display: grid;
+}
+.site .stack > * {
+  grid-area: 1 / 1;
+}
+
+
+/* A highlighter stroke under a phrase. Drawn by default; the outcomes section
+   sweeps it in when motion is welcome. */
+.site .highlight {
+  background-image: linear-gradient(var(--color-lime), var(--color-lime));
+  background-repeat: no-repeat;
+  background-position: 0 88%;
+  background-size: 100% 0.42em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* FAQ: native details/summary, with the marker drawn as a plus. */
+.site details > summary {
+  list-style: none;
+}
+.site details > summary::-webkit-details-marker {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site *,
+  .site *::before,
+  .site *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ============================================================
+   The opening — welcome greetings and the reload waveform
+   ------------------------------------------------------------
+   Hidden unless the pre-paint script in the site layout has asked for one of
+   them, so no script means no overlay and the website is simply there. The
+   failsafe keyframe is the second net: if the module never runs, the overlay
+   takes itself away rather than holding anyone up.
+   ============================================================ */
+
+html[data-site-intro] body {
+  overflow: hidden;
+}
+
+.site .site-intro {
+  display: none;
+}
+
+html[data-site-intro] .site .site-intro {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  background: var(--color-cream);
+  will-change: transform;
+  animation: site-intro-release 0s linear 12s forwards;
+}
+
+@keyframes site-intro-release {
+  to {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+}
+
+/* Only the part belonging to the opening that is playing. */
+html[data-site-intro="reload"] .site .site-intro-greetings,
+html[data-site-intro="reload"] .site .site-intro-progress,
+html[data-site-intro="welcome"] .site .site-intro-wave,
+.site .site-intro[data-static] .site-intro-greetings,
+.site .site-intro[data-static] .site-intro-wave,
+.site .site-intro[data-static] .site-intro-progress {
+  display: none;
+}
+
+/* Every stage of the opening shares one centred cell: the greetings, the
+   waveform and the logo all happen in the same place, so the logo arrives
+   exactly where the eye already is. */
+.site .site-intro-stage {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  padding-inline: 20px;
+}
+
+.site .site-intro-stage > * {
+  grid-area: 1 / 1;
+}
+
+/* A hairline that fills as the greetings pass: how far along, without a word. */
+.site .site-intro-progress {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(40px, 9vh, 88px);
+  width: clamp(96px, 14vw, 148px);
+  height: 1px;
+  overflow: hidden;
+  translate: -50% 0;
+  background: rgb(23 22 20 / 0.12);
+  opacity: 0;
+}
+
+.site .site-intro-progress-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--color-ink);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+/* ---------------- greetings ---------------- */
+
+/* One stacked cell: every script lands on the same centre line, and the row is
+   tall enough for the widest and tallest of them, so nothing jumps. */
+.site .site-intro-greetings {
+  display: grid;
+  place-items: center;
+  width: min(92vw, 1080px);
+  min-height: clamp(120px, 24vh, 224px);
+}
+
+.site .site-intro-line {
+  grid-area: 1 / 1;
+  display: block;
+  overflow: hidden;
+  /* Generous room above and below for Indic ascenders, matras, conjuncts and
+     descenders, which reach well past the line box at this size. */
+  padding: 0.5em 0.1em 0.46em;
+}
+
+.site .site-intro-word {
+  display: block;
+  white-space: nowrap;
+  font-family: var(--font-garamond), "EB Garamond", "Nirmala UI", "Noto Sans Devanagari", "Noto Sans Kannada",
+    "Noto Sans Malayalam", "Noto Sans Bengali", "Noto Sans Tamil", "Noto Sans Telugu", "Noto Sans Gujarati",
+    "Noto Sans Gurmukhi", "Noto Sans Oriya", "Noto Sans", Georgia, serif;
+  font-size: clamp(40px, 8.4vw, 94px);
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: var(--color-ink);
+  opacity: 0;
+}
+
+/* ---------------- reload waveform ---------------- */
+
+.site .site-intro-wave {
+  display: grid;
+  place-items: center;
+  gap: 26px;
+  width: min(86vw, 560px);
+  /* Held back until the script has laid the bars down; otherwise they would
+     paint at full height as a solid block before the wave takes them over. */
+  opacity: 0;
+}
+
+.site .site-intro-wave-svg {
+  display: block;
+  width: 100%;
+  height: clamp(72px, 12vh, 108px);
+}
+
+.site .site-intro-status {
+  color: var(--color-ink-faint);
+  opacity: 0;
+}
+
+/* ---------------- wordmark ---------------- */
+
+.site .site-intro-mark {
+  display: grid;
+  justify-items: center;
+  gap: 22px;
+  color: var(--color-ink);
+  opacity: 0;
+}
+
+/* The wordmark is artwork, so the lockup is sized, never scaled: a transform
+   would enlarge the pixels; a size lets the browser draw it as shown. */
+.site .site-intro-mark .brand-lockup {
+  gap: 14px;
+}
+.site .site-intro-mark .brand-badge {
+  width: 40px;
+  height: 40px;
+}
+.site .site-intro-mark .brand-logo {
+  height: 24px;
+}
+
+.site .site-intro-rule {
+  display: block;
+  width: clamp(120px, 22vw, 200px);
+  height: 2px;
+  border-radius: 2px;
+  background: var(--color-lime);
+  transform-origin: center;
+}
+
+/* The static reveal for reduced motion: no sequence, just the wordmark. */
+.site .site-intro[data-static] .site-intro-mark {
+  opacity: 1;
+  transition: opacity 0.25s linear;
+}
+
+@media (min-width: 768px) {
+  .site .site-intro-mark .brand-lockup {
+    gap: 18px;
+  }
+  .site .site-intro-mark .brand-badge {
+    width: 52px;
+    height: 52px;
+  }
+  .site .site-intro-mark .brand-logo {
+    height: 31px;
+  }
+}
+
+/* The hero call rings before it is answered. That ring is a moment in an
+   animation, not a state of the card: without JavaScript, or with motion
+   turned down, the card simply shows the live call it settles into. */
+.site [data-ringing] {
+  display: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .site-js .site [data-ringing] {
+    display: flex;
+    opacity: 0;
+  }
+}
+
+/* The product's name inside the opening statement: set heavier than the
+   sentence around it and carrying the brand's line, so the eye catches it as
+   the words brighten through. The line is drawn in CSS and only re-drawn by
+   the scroll when motion is welcome. */
+.site .statement-brand {
+  font-weight: 600;
+  color: var(--color-ink);
+  background-image: linear-gradient(var(--color-lime), var(--color-lime));
+  background-repeat: no-repeat;
+  background-position: 0 90%;
+  background-size: 100% 0.26em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* ============================================================
+   The logo lockup
+   ------------------------------------------------------------
+   The signal mark beside the Tringlo AI wordmark. The wordmark is the
+   brand's own artwork, sized by height only so its proportions are always
+   the artwork's.
+   ============================================================ */
+.site .brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.site .brand-badge {
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+
+.site .brand-logo {
+  display: block;
+  width: auto;
+  height: 16px;
+  max-width: none;
+}
+
+@media (max-width: 430px) {
+  .site .brand-lockup {
+    gap: 8px;
+  }
+  .site .brand-badge {
+    width: 24px;
+    height: 24px;
+  }
+  .site .brand-logo {
+    height: 14px;
+  }
+}
+
+/* ============================================================
+   The side rail and the way back up
+   ============================================================ */
+
+/* The rail needs clear room beside the content, so it appears only where
+   there is some; below that the header's own menu covers the same ground. */
+.site .site-rail {
+  display: none;
+}
+
+@media (min-width: 1360px) {
+  .site .site-rail {
+    position: fixed;
+    left: clamp(18px, 2.2vw, 34px);
+    top: 50%;
+    z-index: 40;
+    display: block;
+    transform: translateY(-50%);
+  }
+}
+
+.site .site-rail ul {
+  display: grid;
+  gap: 2px;
+}
+
+.site .site-rail a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  color: var(--color-ink-faint);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* At rest the rail is nothing but ticks, so it never sits on top of the page.
+   The label is for the moment someone reaches for it, and carries its own
+   surface so it stays legible over whatever it lands on. */
+.site .site-rail-tick {
+  display: block;
+  width: 14px;
+  height: 1.5px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.45;
+  transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s, background-color 0.3s;
+}
+
+.site .site-rail-label {
+  padding: 4px 9px;
+  border-radius: 4px;
+  background: var(--color-cream);
+  box-shadow: 0 0 0 1px var(--color-stone), 0 10px 22px -14px rgb(23 22 20 / 0.5);
+  white-space: nowrap;
+  opacity: 0;
+  translate: -6px 0;
+  pointer-events: none;
+  transition: opacity 0.25s, translate 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.site .site-rail a:hover,
+.site .site-rail a:focus-visible,
+.site .site-rail a[aria-current] {
+  color: var(--color-ink);
+}
+
+.site .site-rail a:hover .site-rail-tick,
+.site .site-rail a:focus-visible .site-rail-tick {
+  width: 24px;
+  opacity: 1;
+}
+
+.site .site-rail a[aria-current] .site-rail-tick {
+  width: 30px;
+  opacity: 1;
+  background: var(--color-iris-deep);
+}
+
+.site .site-rail a:hover .site-rail-label,
+.site .site-rail a:focus-visible .site-rail-label,
+.site .site-rail[data-peek] .site-rail-label {
+  opacity: 1;
+  translate: 0 0;
+}
+
+/* The one look the rail gives of itself fades out on its own; after that the
+   labels wait to be asked for, so they never sit over the page. */
+.site .site-rail[data-peek] .site-rail-label {
+  transition-duration: 0.45s;
+}
+
+/* Back to top: out of the way until there is a way back worth offering. */
+.site .site-to-top {
+  position: fixed;
+  right: clamp(16px, 2.2vw, 34px);
+  bottom: clamp(16px, 2.2vw, 34px);
+  z-index: 45;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border: 1px solid var(--color-ink);
+  border-radius: 999px;
+  background: var(--color-cream);
+  color: var(--color-ink);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.9),
+    0 2px 4px -2px rgb(23 22 20 / 0.2),
+    0 14px 26px -14px rgb(23 22 20 / 0.45);
+  opacity: 0;
+  translate: 0 14px;
+  pointer-events: none;
+  transition: opacity 0.35s, translate 0.45s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.3s, color 0.3s;
+}
+
+.site .site-to-top[data-shown] {
+  opacity: 1;
+  translate: 0 0;
+  pointer-events: auto;
+}
+
+.site .site-to-top:hover {
+  background: var(--color-ink);
+  color: var(--color-cream);
+}
+
+.site .site-to-top:active {
+  translate: 0 2px;
+}

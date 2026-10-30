@@ -1,5 +1,5 @@
 // ============================================================
-// Dialo AI — Call Recordings
+// Tringlo AI — Call Recordings
 // ============================================================
 //
 // Sarvam does not put a recording in the completion webhook: the payload has a
@@ -13,16 +13,23 @@
 // Recordings are fetched with the server's API key and saved to disk the first
 // time they are needed, so a call's audio stays available after Sarvam's own
 // retention ends and each one is only downloaded from Sarvam once. The browser
-// never sees the API key or the Sarvam URL — it asks Dialo, by call id.
+// never sees the API key or the Sarvam URL — it asks Tringlo, by call id.
 // ============================================================
 
 import fs from "node:fs";
 import path from "node:path";
 
-import { wavToMp3 } from "@/lib/recordings/mp3";
+import { isStandardMp3, wavToMp3 } from "@/lib/recordings/mp3";
+import type { PlatformCredentials } from "@/lib/providers/types";
 
 const RECORDINGS_DIR = path.join(process.cwd(), "data", "recordings");
 const SARVAM_ANALYTICS = "https://apps.sarvam.ai/api/analytics/v1";
+
+/** Tringlo's credentials plus the agent the call ran on. */
+export interface CallAgent {
+  credentials: PlatformCredentials;
+  appId: string;
+}
 
 /**
  * Sarvam interaction ids look like `20260921/777ccdb9-21:17:05-a68fd3b4`.
@@ -50,10 +57,6 @@ function fileFor(interactionId: string, extension: "wav" | "mp3" = "wav"): strin
   return resolved;
 }
 
-function readEnv(name: string): string {
-  return (process.env[name] || "").trim().replace(/^["']|["']$/g, "");
-}
-
 export type RecordingResult =
   | { ok: true; audio: Buffer; source: "cache" | "sarvam" }
   | { ok: false; status: number; reason: string };
@@ -74,7 +77,7 @@ export function hasSavedRecording(interactionId: string): boolean {
  * Only a genuine WAV body is saved — an error page or a JSON message stored
  * under a `.wav` name would play as silence and never be re-fetched.
  */
-export async function fetchRecording(interactionId: string): Promise<RecordingResult> {
+export async function fetchRecording(interactionId: string, agent: CallAgent): Promise<RecordingResult> {
   if (!isValidInteractionId(interactionId)) {
     return { ok: false, status: 400, reason: "This call has no valid interaction id." };
   }
@@ -82,10 +85,8 @@ export async function fetchRecording(interactionId: string): Promise<RecordingRe
   const cached = readSavedRecording(interactionId);
   if (cached) return { ok: true, audio: cached, source: "cache" };
 
-  const apiKey = readEnv("SARVAM_API_KEY");
-  const org = readEnv("SARVAM_ORG_ID");
-  const workspace = readEnv("SARVAM_WORKSPACE_ID");
-  const app = readEnv("SARVAM_APP_ID") || readEnv("SARVAM_AGENT_ID");
+  const { apiKey, orgId: org, workspaceId: workspace } = agent.credentials;
+  const app = agent.appId;
 
   if (!apiKey || !org || !workspace || !app) {
     return { ok: false, status: 503, reason: "Sarvam is not configured on this server." };
@@ -148,12 +149,12 @@ export async function fetchRecording(interactionId: string): Promise<RecordingRe
  * a little and retries a few times. Failure is harmless: the recording is also
  * fetched on demand the first time someone plays or downloads it.
  */
-export function prefetchRecordingLater(interactionId: string): void {
+export function prefetchRecordingLater(interactionId: string, agent: CallAgent): void {
   if (!isValidInteractionId(interactionId) || hasSavedRecording(interactionId)) return;
 
   const delays = [15_000, 60_000, 300_000];
   const attempt = async (index: number) => {
-    const result = await fetchRecording(interactionId).catch(() => null);
+    const result = await fetchRecording(interactionId, agent).catch(() => null);
     if (result?.ok || index >= delays.length - 1) return;
     setTimeout(() => attempt(index + 1), delays[index + 1]);
   };
@@ -178,7 +179,11 @@ export type Mp3Result =
 export function readSavedMp3(interactionId: string): Buffer | null {
   if (!isValidInteractionId(interactionId)) return null;
   const file = fileFor(interactionId, "mp3");
-  return fs.existsSync(file) ? fs.readFileSync(file) : null;
+  if (!fs.existsSync(file)) return null;
+  const saved = fs.readFileSync(file);
+  // Encoded before resampling existed, as MPEG-2.5; re-encode rather than
+  // keep serving a file some players reject.
+  return isStandardMp3(saved) ? saved : null;
 }
 
 /**
@@ -187,7 +192,7 @@ export function readSavedMp3(interactionId: string): Buffer | null {
  * Failure to cache is not failure to serve: if the disk write fails the audio
  * is still returned, and the next request simply encodes it again.
  */
-export async function getRecordingAsMp3(interactionId: string): Promise<Mp3Result> {
+export async function getRecordingAsMp3(interactionId: string, agent: CallAgent): Promise<Mp3Result> {
   if (!isValidInteractionId(interactionId)) {
     return { ok: false, status: 400, reason: "This call has no valid interaction id." };
   }
@@ -195,7 +200,7 @@ export async function getRecordingAsMp3(interactionId: string): Promise<Mp3Resul
   const cached = readSavedMp3(interactionId);
   if (cached) return { ok: true, audio: cached, source: "cache" };
 
-  const source = await fetchRecording(interactionId);
+  const source = await fetchRecording(interactionId, agent);
   if (!source.ok) return source;
 
   const encoded = await wavToMp3(source.audio);

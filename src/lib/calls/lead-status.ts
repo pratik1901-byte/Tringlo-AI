@@ -1,5 +1,5 @@
 // ============================================================
-// Dialo AI — Keeping a Lead's Status in Step With Its Calls
+// Tringlo AI — Keeping a Lead's Status in Step With Its Calls
 // ============================================================
 //
 // A lead's status is the status of its most recent call. That is the only

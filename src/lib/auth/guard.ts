@@ -1,5 +1,5 @@
 // ============================================================
-// Dialo AI — Request Authentication & Tenant Scoping
+// Tringlo AI — Request Authentication & Tenant Scoping
 // ============================================================
 //
 // One entry point for protected routes. `requireAuth` either returns the caller
@@ -19,9 +19,11 @@ import { NextResponse } from "next/server";
 
 import {
   deleteSession,
+  findMembership,
   findSessionByTokenHash,
   getTenant,
   getUser,
+  membershipsForUser,
   touchSession,
 } from "@/lib/db";
 import type { PublicUser, Session, User } from "@/lib/types";
@@ -34,13 +36,26 @@ import {
   sessionExpiry,
 } from "./sessions";
 
-export type AuthFailure = "no_token" | "invalid_session" | "expired_session" | "unknown_user";
+export type AuthFailure =
+  | "no_token"
+  | "invalid_session"
+  | "expired_session"
+  | "unknown_user"
+  /** Signed in, but no workspace is open — the client shows the selector. */
+  | "no_workspace";
 
 export interface AuthSuccess {
   ok: true;
   user: User;
   session: Session;
+  /**
+   * The workspace this request acts on: the one open on the session, checked
+   * against a live membership on every request. Never taken from the client,
+   * and never defaulted to "the user's own" workspace.
+   */
   tenantId: string;
+  /** The caller's role in that workspace. */
+  role: "owner" | "admin" | "member";
 }
 
 export interface AuthRejection {
@@ -75,7 +90,22 @@ function unauthorized(reason: AuthFailure, message: string): AuthRejection {
  * An expired session is deleted as it is found, so a client that keeps
  * presenting it stops accumulating dead rows.
  */
-export async function requireAuth(request: Request): Promise<AuthResult> {
+export interface AccountAuthSuccess {
+  ok: true;
+  user: User;
+  session: Session;
+}
+export type AccountAuthResult = AccountAuthSuccess | AuthRejection;
+
+/**
+ * Authenticates the account, without requiring a workspace to be open.
+ *
+ * This is for the handful of places that exist *before* a workspace is
+ * chosen — listing the workspaces someone may open, and opening one. Every
+ * other protected route wants `requireAuth`, which also establishes whose
+ * data the request may touch.
+ */
+export async function requireAuthAccount(request: Request): Promise<AccountAuthResult> {
   const token = extractSessionToken(request);
   if (!token) {
     return unauthorized("no_token", "Sign in to continue.");
@@ -113,48 +143,84 @@ export async function requireAuth(request: Request): Promise<AuthResult> {
     touchSession(session.id, new Date(now).toISOString(), sessionExpiry(now, remembered));
   }
 
-  return { ok: true, user, session, tenantId: user.tenantId };
+  return { ok: true, user, session };
+}
+
+/**
+ * Authenticates the request and establishes which workspace it acts on.
+ *
+ * Both halves must hold: a valid session, and a live membership in the
+ * workspace that session has open.
+ */
+export async function requireAuth(request: Request): Promise<AuthResult> {
+  const account = await requireAuthAccount(request);
+  if (!account.ok) return account;
+  const { user, session } = account;
+
+  // Which workspace this request acts on.
+  //
+  // The session carries it, but the session is not the authority: the grant
+  // is. A session pointing at a workspace the account no longer belongs to
+  // gets nothing — there is deliberately no fall back to a "default" or to the
+  // workspace on the user record, because either would hand over data the
+  // account may no longer be allowed to see.
+  const open = session.tenantId ? findMembership(user.id, session.tenantId) : undefined;
+  if (open) {
+    return { ok: true, user, session, tenantId: open.tenantId, role: open.role };
+  }
+
+  // Nothing open, or what was open is no longer theirs.
+  //
+  // Even one workspace is chosen rather than assumed: opening it here would
+  // skip the selector, and someone with two companies must never find
+  // themselves already inside one of them without having said which.
+  const available = membershipsForUser(user.id);
+
+  return unauthorized(
+    "no_workspace",
+    available.length === 0
+      ? "This account has no workspace yet."
+      : "Choose a workspace to continue."
+  );
 }
 
 /** Projects a stored user into the only shape the client may see. */
-export function toPublicUser(user: User): PublicUser {
+export function toPublicUser(user: User, activeTenantId?: string): PublicUser {
+  // Which workspace is *open*, not which one the account was created in. With
+  // one account able to hold several, those are no longer the same thing, and
+  // showing the wrong one is how someone edits the wrong company's settings.
+  const tenantId = activeTenantId || user.tenantId;
   return {
     id: user.id,
     email: user.email,
     name: user.name,
     role: user.role,
-    tenantId: user.tenantId,
-    tenantName: getTenant(user.tenantId)?.name ?? "",
+    tenantId,
+    tenantName: getTenant(tenantId)?.name ?? "",
   };
 }
 
 /**
- * Filters a list of tenant-owned records to the caller's tenant.
+ * Filters a list of tenant-owned records to the caller's workspace.
  *
- * Records written before tenancy existed carry no `tenantId`. Those belong to
- * the original single tenant, so they are visible to it and to nobody else —
- * silently hiding a business's own history would look like data loss.
+ * A record with no `tenantId` belongs to no workspace and is returned to
+ * none. There is deliberately no fallback to the original workspace: a row
+ * that loses its workspace is a bug to find, not data to hand to whoever
+ * happens to be first.
  */
 export function scopeToTenant<T extends { tenantId?: string | null }>(
   rows: T[],
-  tenantId: string,
-  legacyTenantId: string | null
+  tenantId: string
 ): T[] {
-  return rows.filter((row) => {
-    if (row.tenantId) return row.tenantId === tenantId;
-    return legacyTenantId !== null && tenantId === legacyTenantId;
-  });
+  return rows.filter((row) => Boolean(row.tenantId) && row.tenantId === tenantId);
 }
 
-/** True when one record may be read or written by this tenant. */
+/** True when one record may be read or written by this workspace. */
 export function ownedByTenant(
   row: { tenantId?: string | null } | null | undefined,
-  tenantId: string,
-  legacyTenantId: string | null
+  tenantId: string
 ): boolean {
-  if (!row) return false;
-  if (row.tenantId) return row.tenantId === tenantId;
-  return legacyTenantId !== null && tenantId === legacyTenantId;
+  return Boolean(row?.tenantId) && row!.tenantId === tenantId;
 }
 
 /** 404 rather than 403 for another tenant's record: existence is not leaked. */

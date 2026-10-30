@@ -1,5 +1,5 @@
 // ============================================================
-// Dialo AI — Email Notifications
+// Tringlo AI — Email Notifications
 // ============================================================
 //
 // Two emails, each switched on per workspace in Settings:
@@ -23,7 +23,6 @@ import {
   getCallRecords,
   getCallingWindow,
   getFollowUps,
-  getLegacyTenantId,
   getNotificationSettings,
   getTenant,
   getUsersForTenant,
@@ -33,18 +32,18 @@ import {
 import { isMailConfigured, sendMail } from "@/lib/mail/mailer";
 import { callbackText, dailySummaryEmail, interestedEmail, testEmail } from "@/lib/mail/templates";
 import { isConnected, isInterested } from "@/lib/metrics";
-import type { CallRecord } from "@/lib/types";
+import { callDirection, type CallRecord } from "@/lib/types";
 
 /** Hour of the day, in the calling timezone, when the daily summary goes out. */
 export const SUMMARY_HOUR = 19;
 
-function timeZone(): string {
-  return getCallingWindow().timezone || "Asia/Kolkata";
+function timeZone(tenantId: string): string {
+  return getCallingWindow(tenantId).timezone || "Asia/Kolkata";
 }
 
 /** "7 PM IST" — how the summary time is described to people. */
-export function summaryTimeLabel(): string {
-  const zone = timeZone();
+export function summaryTimeLabel(tenantId: string): string {
+  const zone = timeZone(tenantId);
   const abbreviation =
     new Intl.DateTimeFormat("en-IN", { timeZone: zone, timeZoneName: "short" })
       .formatToParts(new Date())
@@ -67,7 +66,7 @@ function workspaceName(tenantId: string): string {
 }
 
 function tenantOfCall(record: CallRecord): string | null {
-  return record.tenantId ?? record.lead?.tenantId ?? getLegacyTenantId();
+  return record.tenantId ?? record.lead?.tenantId ?? null;
 }
 
 // ------------------------------------------------------------------
@@ -84,7 +83,6 @@ export async function notifyIfInterested(record: CallRecord): Promise<void> {
   try {
     if (!isInterested(record) || record.interestAlertSentAt) return;
     if (!isMailConfigured()) return;
-
     const tenantId = tenantOfCall(record);
     if (!tenantId) return;
     if (!getNotificationSettings(tenantId).emailAlerts) return;
@@ -109,7 +107,7 @@ export async function notifyIfInterested(record: CallRecord): Promise<void> {
       summary: record.aiSummary ?? null,
       endedAt: record.endedAt ?? null,
       durationSeconds: record.duration ?? null,
-      timeZone: timeZone(),
+      timeZone: timeZone(tenantId),
     });
 
     const result = await sendMail({ to, ...email });
@@ -163,13 +161,12 @@ export interface DailySummary {
 
 /** Everything a workspace's calls did on one local date. */
 export function buildDailySummary(tenantId: string, date: string, zone: string): DailySummary {
-  const legacy = getLegacyTenantId();
-  const calls = scopeToTenant(getCallRecords(), tenantId, legacy).filter(
-    (call) => localDate(call.requestedAt || call.startedAt, zone) === date
+  const calls = scopeToTenant(getCallRecords(), tenantId).filter(
+    (call) => callDirection(call) === "outbound" && localDate(call.requestedAt || call.startedAt, zone) === date
   );
 
   const tomorrowDate = shiftDate(date, 1);
-  const tomorrow = scopeToTenant(getFollowUps(), tenantId, legacy)
+  const tomorrow = scopeToTenant(getFollowUps(), tenantId)
     .filter(
       (followUp) =>
         (followUp.status === "scheduled" || followUp.status === "retry_pending") &&
@@ -201,7 +198,7 @@ export async function sendDailySummary(tenantId: string, date: string): Promise<
   const to = recipientFor(tenantId);
   if (!to) return false;
 
-  const zone = timeZone();
+  const zone = timeZone(tenantId);
   const today = buildDailySummary(tenantId, date, zone);
   const yesterday = buildDailySummary(tenantId, shiftDate(date, -1), zone);
 
@@ -209,7 +206,7 @@ export async function sendDailySummary(tenantId: string, date: string): Promise<
     workspace: workspaceName(tenantId),
     date,
     timeZone: zone,
-    summaryTime: summaryTimeLabel(),
+    summaryTime: summaryTimeLabel(tenantId),
     placed: today.placed,
     connected: today.connected,
     notPicked: today.notPicked,
@@ -242,12 +239,12 @@ export async function sendDailySummary(tenantId: string, date: string): Promise<
 export async function runDailySummaries(now = Date.now()): Promise<number> {
   if (!isMailConfigured()) return 0;
 
-  const { date, hour } = localNow(timeZone(), now);
-  if (hour < SUMMARY_HOUR) return 0;
-
   let sent = 0;
   for (const settings of getAllNotificationSettings()) {
-    if (!settings.dailySummary || settings.lastSummaryDate === date) continue;
+    if (!settings.dailySummary) continue;
+    // Each workspace's evening arrives at its own time.
+    const { date, hour } = localNow(timeZone(settings.tenantId), now);
+    if (hour < SUMMARY_HOUR || settings.lastSummaryDate === date) continue;
 
     saveNotificationSettings(settings.tenantId, { lastSummaryDate: date });
     try {
@@ -273,10 +270,10 @@ export async function sendTestEmail(tenantId: string): Promise<{ ok: boolean; to
     workspace: workspaceName(tenantId),
     recipient: to,
     sentAt: new Date().toISOString(),
-    timeZone: timeZone(),
+    timeZone: timeZone(tenantId),
     emailAlerts: settings.emailAlerts,
     dailySummary: settings.dailySummary,
-    summaryTime: summaryTimeLabel(),
+    summaryTime: summaryTimeLabel(tenantId),
   });
 
   const result = await sendMail({ to, ...email });

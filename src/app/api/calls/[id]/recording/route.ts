@@ -1,9 +1,11 @@
+import { resolveCallAgent } from "@/lib/providers/config";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 import { notFound, ownedByTenant, requireAuth } from "@/lib/auth/guard";
-import { getCallRecord, getCallRecordByAttemptId, getLegacyTenantId } from "@/lib/db";
+import { getCallRecord, getCallRecordByAttemptId } from "@/lib/db";
 import { fetchRecording, getRecordingAsMp3, isValidInteractionId } from "@/lib/recordings";
+import { withId3Tag } from "@/lib/recordings/mp3";
 import { clientKey, rateLimit } from "@/lib/security/rate-limit";
 
 /** Builds a download name people can recognise later, safe on any OS. */
@@ -27,7 +29,7 @@ function downloadName(leadName: string, when: string | null, extension: "mp3" | 
  * natively everywhere, and is what someone can actually attach to an email.
  * The WAV is never discarded, so the MP3 can always be re-encoded.
  *
- * Addressed by Dialo's call id rather than Sarvam's interaction id: the
+ * Addressed by Tringlo's call id rather than Sarvam's interaction id: the
  * interaction id contains slashes and colons, and the browser has no business
  * handling provider identifiers anyway.
  *
@@ -48,7 +50,7 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/calls/[i
 
   // Another tenant's recording reports as missing, not forbidden: a 403 would
   // confirm the call exists.
-  if (!record || !ownedByTenant(record, auth.tenantId, getLegacyTenantId())) {
+  if (!record || !ownedByTenant(record, auth.tenantId)) {
     return notFound("No call found with that id.");
   }
 
@@ -63,28 +65,48 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/calls/[i
   // MP3 unless the original is asked for by name.
   const wantsWav = request.nextUrl.searchParams.get("format") === "wav";
 
+  // The agent this call ran on — recorded with the call, so changing the
+  // workspace's agent later does not make old recordings unreachable.
+  const agent = resolveCallAgent(record);
+  if (!agent) {
+    return NextResponse.json(
+      { error: "This workspace's voice provider is not configured, so the recording cannot be fetched." },
+      { status: 422 }
+    );
+  }
+
   const result = wantsWav
-    ? await fetchRecording(record.providerInteractionId)
-    : await getRecordingAsMp3(record.providerInteractionId);
+    ? await fetchRecording(record.providerInteractionId, agent)
+    : await getRecordingAsMp3(record.providerInteractionId, agent);
 
   if (!result.ok) {
     return NextResponse.json({ error: result.reason }, { status: result.status });
   }
 
-  const audio = result.audio;
+  const when = record.startedAt || record.requestedAt;
+  const leadName = record.lead?.name ?? "call";
+
+  // Titled, so the file reads "Call with Ananya Rao · 26 Sep 2026" in a
+  // player or file manager rather than an anonymous blob. Added here rather
+  // than cached, so a renamed lead is reflected.
+  const audio = wantsWav
+    ? result.audio
+    : withId3Tag(result.audio, {
+        title: `Call with ${leadName}${when ? ` · ${new Date(when).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}` : ""}`,
+        year: when ? String(new Date(when).getFullYear()) : undefined,
+      });
   const total = audio.length;
   const download = request.nextUrl.searchParams.get("download") === "1";
+  const filename = downloadName(leadName, when, wantsWav ? "wav" : "mp3");
 
   const headers: Record<string, string> = {
     "Content-Type": wantsWav ? "audio/wav" : "audio/mpeg",
     "Accept-Ranges": "bytes",
-    // Private: this is a customer's voice.
-    "Cache-Control": "private, max-age=3600",
-    "Content-Disposition": `${download ? "attachment" : "inline"}; filename="${downloadName(
-      record.lead?.name ?? "call",
-      record.startedAt || record.requestedAt,
-      wantsWav ? "wav" : "mp3"
-    )}"`,
+    // Private: this is a customer's voice. Revalidated every time, so a
+    // browser can never replay an older copy — this URL once served WAV.
+    "Cache-Control": "private, no-cache",
+    "X-Content-Type-Options": "nosniff",
+    "Content-Disposition": `${download ? "attachment" : "inline"}; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
   };
 
   // --- Range requests, so seeking works ---

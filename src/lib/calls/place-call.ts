@@ -1,5 +1,5 @@
 // ============================================================
-// Dialo AI — Placing a Call
+// Tringlo AI — Placing a Call
 // ============================================================
 //
 // One path to the provider, shared by the Call Now button and the follow-up
@@ -18,7 +18,6 @@ import {
   getCallRecordsForLead,
   getLead,
   getLeads,
-  getLegacyTenantId,
   getWebhookBaseUrl,
   saveCallRecord,
   saveLead,
@@ -26,6 +25,8 @@ import {
 import { getContextForCall } from "@/lib/memory/service";
 import { ownedByTenant } from "@/lib/auth/guard";
 import { buildAgentKnowledgeContext } from "@/lib/rag";
+import { tryResolveOutbound } from "@/lib/providers/config";
+import { NOT_CONFIGURED } from "@/lib/providers/types";
 import { SarvamClientError, sarvamVoiceService } from "@/lib/providers/sarvam";
 import { checkWebhookReachable, reachabilityCheckDisabled } from "@/lib/calls/webhook-reachability";
 import type { AgentConfig, CallRecord, Lead } from "@/lib/types";
@@ -42,6 +43,7 @@ export type PlaceCallFailure =
   | "webhook_unreachable"
   | "provider_error"
   | "outbound_blocked"
+  | "provider_not_configured"
   | "lead_not_found";
 
 export interface PlaceCallSuccess {
@@ -93,8 +95,11 @@ export interface PlaceCallInput {
   /** Overrides the stored configuration. Omitted by the scheduler, which has no browser. */
   agentConfig?: Partial<AgentConfig>;
   webhookBaseUrl: string;
-  /** Recorded on the call so a scheduled callback is distinguishable from a manual dial. */
-  origin: "manual" | "scheduler";
+  /**
+   * Recorded on the call, so a scheduled callback is distinguishable from a
+   * manual dial — and a public demo from either.
+   */
+  origin: "manual" | "scheduler" | "demo";
   /**
    * The workspace placing the call. Required from the browser, where it comes
    * from the session; the scheduler omits it and the lead's own workspace is
@@ -118,7 +123,7 @@ function fail(
 export async function placeCall(input: PlaceCallInput): Promise<PlaceCallResult> {
   // Checked first, before anything can reach the provider.
   if (outboundCallsBlocked()) {
-    console.warn("[Dialo] Outbound calls are blocked by DIALO_BLOCK_OUTBOUND_CALLS.");
+    console.warn("[Tringlo] Outbound calls are blocked by DIALO_BLOCK_OUTBOUND_CALLS.");
     return fail(
       "outbound_blocked",
       "Outbound calling is disabled on this server (DIALO_BLOCK_OUTBOUND_CALLS).",
@@ -139,28 +144,51 @@ export async function placeCall(input: PlaceCallInput): Promise<PlaceCallResult>
     );
   }
 
-  // The stored configuration is authoritative; a request may override it, which
-  // is what keeps the Agent page's unsaved edits usable for a manual test call.
-  const agentConfig = { ...(getAgentConfig() ?? {}), ...(input.agentConfig ?? {}) };
+  // The workspace this call belongs to. From the session when a person placed
+  // it; from the lead itself when the scheduler did.
+  const requestedLead = input.leadId ? getLead(input.leadId) : undefined;
+  const tenantId = input.tenantId ?? requestedLead?.tenantId ?? null;
+
+  if (!tenantId) {
+    return fail("invalid_request", "This call belongs to no workspace, so it was not placed.", 400);
+  }
+
+  // Which Sarvam agent speaks for this workspace. A workspace that has not been
+  // configured cannot place a call, and never borrows another's agent.
+  const provider = tryResolveOutbound(tenantId);
+  if (!provider.ok) {
+    return fail("provider_not_configured", provider.problems[0] ?? NOT_CONFIGURED, 422, {
+      problems: provider.problems,
+    });
+  }
+
+  // The stored configuration is authoritative; a request may override it with
+  // the Agent page's unsaved edits for a manual test call. But a BLANK override
+  // must never wipe a stored value: the browser's agent-config store is empty
+  // right after a page or server reload, and spreading it over the stored
+  // config would erase a saved company name and refuse the call — "even though
+  // I have a company name". So an override only takes effect where it actually
+  // carries a value; an empty string, null or undefined leaves the stored
+  // value standing.
+  const stored = getAgentConfig(tenantId);
+  const agentConfig: Partial<AgentConfig> = { ...stored };
+  for (const [key, value] of Object.entries(input.agentConfig ?? {})) {
+    const blank = value === undefined || value === null || (typeof value === "string" && value.trim() === "");
+    if (!blank) (agentConfig as Record<string, unknown>)[key] = value;
+  }
 
   const companyName = (agentConfig.companyName || "").trim();
   if (!companyName) {
     return fail(
       "missing_company_name",
-      "No company name is configured. Set it on the AI Agent page — the agent introduces itself with it on every call.",
+      "No company name is configured for this workspace. Set it on the AI Agent page — the agent introduces itself with it on every call.",
       400
     );
   }
 
-  // The workspace this call belongs to. From the session when a person placed
-  // it; from the lead itself when the scheduler did.
-  const legacyTenant = getLegacyTenantId();
-  const requestedLead = input.leadId ? getLead(input.leadId) : undefined;
-  const tenantId = input.tenantId ?? requestedLead?.tenantId ?? legacyTenant ?? null;
-
   // A lead id from another workspace is treated as not existing — the same
   // answer the API gives for any other tenant's record.
-  if (requestedLead && tenantId && !ownedByTenant(requestedLead, tenantId, legacyTenant)) {
+  if (requestedLead && tenantId && !ownedByTenant(requestedLead, tenantId)) {
     return fail("invalid_request", "No such lead.", 404);
   }
 
@@ -171,7 +199,7 @@ export async function placeCall(input: PlaceCallInput): Promise<PlaceCallResult>
     (tenantId
       ? getLeads().find(
           (lead) =>
-            ownedByTenant(lead, tenantId, legacyTenant) &&
+            ownedByTenant(lead, tenantId) &&
             lead.phone.replace(/\D/g, "").slice(-10) === phone.replace(/\D/g, "").slice(-10)
         )
       : findLeadByPhone(phone));
@@ -231,7 +259,7 @@ export async function placeCall(input: PlaceCallInput): Promise<PlaceCallResult>
     suppressed: false,
   };
 
-  const knowledge = buildAgentKnowledgeContext(companyName, agentConfig, [
+  const knowledge = buildAgentKnowledgeContext(tenantId, agentConfig, [
     lead.company || "",
     lead.notes || "",
   ]);
@@ -256,6 +284,8 @@ export async function placeCall(input: PlaceCallInput): Promise<PlaceCallResult>
 
   try {
     const result = await sarvamVoiceService.startOutboundCall({
+      provider: provider.value,
+      tenantId,
       leadId,
       leadName: lead.name,
       leadPhone: phone,
@@ -268,6 +298,21 @@ export async function placeCall(input: PlaceCallInput): Promise<PlaceCallResult>
       campaignId: input.campaignId,
       campaignName: input.campaignName,
       previousInteraction: memoryContext?.previousInteraction ?? "",
+      // The same memory as separate fields, for an app that declares them.
+      // Only sent when there is something to say.
+      customVariables: memoryContext && !memoryContext.isEmpty
+        ? {
+            customer_id: memoryContext.customerId ?? "",
+            customer_memory_context: memoryContext.customerMemoryContext,
+            previous_interaction_summary: memoryContext.priorTouchpointSummary,
+            last_call_summary: memoryContext.lastCallSummary ?? "",
+            previous_interest: memoryContext.previousInterest ?? "",
+            previous_objection: memoryContext.previousObjection ?? "",
+            previous_commitment: memoryContext.previousCommitment ?? "",
+            previous_next_step: memoryContext.previousNextStep ?? "",
+            follow_up_reason: memoryContext.followUpReason ?? "",
+          }
+        : undefined,
       ragContext: knowledge.compactContext,
       webhookBaseUrl,
       callId,
@@ -305,6 +350,7 @@ export async function placeCall(input: PlaceCallInput): Promise<PlaceCallResult>
       agentName: agentConfig.agentName?.trim() || null,
       origin: input.origin,
       providerCallId: callId,
+      providerAppId: provider.value.outbound.appId,
       providerAttemptId: result.attemptId,
       providerStatus: "accepted",
       inputVariables: result.inputVariables,
@@ -313,7 +359,7 @@ export async function placeCall(input: PlaceCallInput): Promise<PlaceCallResult>
     saveCallRecord(record);
 
     console.log(
-      `[Dialo] Outbound triggered (${input.origin}) — callId: ${callId}, attemptId: ${result.attemptId}, knowledge sources: ${knowledge.sourcesUsed.length}`
+      `[Tringlo] Outbound triggered (${input.origin}) — callId: ${callId}, attemptId: ${result.attemptId}, knowledge sources: ${knowledge.sourcesUsed.length}`
     );
 
     return {

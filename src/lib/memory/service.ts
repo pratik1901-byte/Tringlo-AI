@@ -1,8 +1,8 @@
 // ============================================================
-// Dialo AI — Memory Service
+// Tringlo AI — Memory Service
 // ============================================================
 //
-// The two operations the rest of Dialo uses:
+// The two operations the rest of Tringlo uses:
 //
 //   recordCallInMemory()  — after a call ends, learn from it
 //   getContextForCall()   — before a call starts, recall what matters
@@ -12,14 +12,16 @@
 // business's context can be requested for another's customer.
 // ============================================================
 
+import { createHash } from "node:crypto";
+
 import {
   findCustomerProfileByPhone,
   getCustomerProfile,
   getLead,
-  getLegacyTenantId,
   getMemoryItems,
   saveCustomerProfile,
   saveMemoryItems,
+  updateCallRecord,
 } from "@/lib/db";
 import {
   customerKey,
@@ -29,7 +31,7 @@ import {
 } from "@/lib/customers/identity";
 import type { CallRecord, Lead } from "@/lib/types";
 import { buildCallContext, type CallContext, type ContextRequest } from "./context";
-import { extractFactsFromCall } from "./extract";
+import { extractFactsFromCall, meaningful } from "./extract";
 import { mergeFacts } from "./merge";
 import { MAX_RECENT_SUMMARIES, type CallSummary, type CustomerProfile } from "./types";
 
@@ -40,7 +42,7 @@ import { MAX_RECENT_SUMMARIES, type CallSummary, type CustomerProfile } from "./
  * tenant, the same rule the API uses for scoping.
  */
 function tenantOf(record: { tenantId?: string | null }): string | null {
-  return record.tenantId ?? getLegacyTenantId();
+  return record.tenantId ?? null;
 }
 
 /**
@@ -96,7 +98,7 @@ export function resolveCustomer(
       updated.names = [name];
       touched = true;
     } else if (!known.some((candidate) => namesLikelyMatch(candidate, name))) {
-      // A genuinely different name on the same number. Dialo cannot tell which
+      // A genuinely different name on the same number. Tringlo cannot tell which
       // person is answering, so personal context is withheld from then on
       // rather than risk telling one person about another's family.
       updated.names = [name, ...known].slice(0, 5);
@@ -127,6 +129,28 @@ export interface RecordOutcome {
   skipped?: string;
 }
 
+/** What a call's memory is learned from. Two deliveries with the same content hash the same. */
+function memoryFingerprint(record: CallRecord): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        status: record.status,
+        outputVariables: record.outputVariables ?? null,
+        turns: record.transcriptTurns ?? null,
+        summary: record.aiSummary ?? null,
+        followUp: [record.followUpRequired ?? false, record.followUpDate ?? null, record.followUpTime ?? null],
+      })
+    )
+    .digest("hex")
+    .slice(0, 32);
+}
+
+function callbackWords(record: CallRecord): string | null {
+  if (!record.followUpRequired) return null;
+  const parts = [record.followUpDate, record.followUpTime ? `at ${record.followUpTime}` : null].filter(Boolean);
+  return parts.length > 0 ? parts.join(" ") : "at a later time";
+}
+
 /**
  * Learns from a finished call.
  *
@@ -148,6 +172,12 @@ export function recordCallInMemory(record: CallRecord): RecordOutcome {
     return { ...empty, skipped: "call did not connect" };
   }
 
+  // The same webhook delivered twice is learned from once.
+  const fingerprint = memoryFingerprint(record);
+  if (record.memoryFingerprint === fingerprint) {
+    return { ...empty, skipped: "already recorded" };
+  }
+
   const tenantId = tenantOf(record) ?? tenantOf(record.lead ?? {});
   if (!tenantId) return { ...empty, skipped: "no tenant" };
 
@@ -164,10 +194,12 @@ export function recordCallInMemory(record: CallRecord): RecordOutcome {
     callId: record.id,
     at,
     durationSeconds: record.duration ?? null,
-    summary: record.aiSummary ?? null,
-    interest: record.interestLevel ?? null,
-    objection: record.objection ?? null,
-    nextStep: record.chosenNextStep ?? null,
+    summary: meaningful(record.aiSummary),
+    interest: meaningful(record.interestLevel),
+    objection: meaningful(record.objection),
+    nextStep: meaningful(record.chosenNextStep),
+    callbackRequested: callbackWords(record),
+    direction: record.direction === "inbound" ? "inbound" : "outbound",
     // The scheduler is the only thing that places a callback.
     wasFollowUp: record.origin === "scheduler",
   };
@@ -183,7 +215,14 @@ export function recordCallInMemory(record: CallRecord): RecordOutcome {
 
   // ---- the durable facts
   const facts = extractFactsFromCall(record);
+  const stamp = () =>
+    updateCallRecord(record.id, {
+      memoryRecordedAt: new Date().toISOString(),
+      memoryFingerprint: fingerprint,
+    });
+
   if (facts.length === 0) {
+    stamp();
     return { ...empty, customerId: profile.id, skipped: "nothing worth remembering" };
   }
 
@@ -195,6 +234,7 @@ export function recordCallInMemory(record: CallRecord): RecordOutcome {
   });
 
   saveMemoryItems(outcome.items);
+  stamp();
 
   console.log(
     `MEMORY_UPDATED call=${record.id} customer=${profile.id} ` +

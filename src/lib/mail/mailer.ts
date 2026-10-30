@@ -1,8 +1,8 @@
 // ============================================================
-// Dialo AI — Outgoing Email
+// Tringlo AI — Outgoing Email
 // ============================================================
 //
-// One SMTP transport for everything Dialo sends: password-reset codes,
+// One SMTP transport for everything Tringlo sends: password-reset codes,
 // interested-lead alerts, the daily summary and the test email. The emails
 // themselves are built in lib/mail/templates.
 //
@@ -11,7 +11,12 @@
 // reported by its SMTP code and message, which do not contain it.
 // ============================================================
 
+import { existsSync } from "node:fs";
+import path from "node:path";
+
 import nodemailer, { type Transporter } from "nodemailer";
+
+import { HEADER_LOGO } from "./templates/layout";
 
 function env(name: string): string {
   return (process.env[name] || "").trim().replace(/^["']|["']$/g, "");
@@ -54,6 +59,21 @@ export interface MailMessage {
   subject: string;
   text: string;
   html: string;
+  /** Where replies go, when that is not the sending address (the contact form). */
+  replyTo?: string;
+}
+
+/**
+ * The header logo travels inside the email as an inline attachment, so it
+ * shows without the reader's client fetching anything from the web. Added
+ * only when the email refers to it, and skipped if the file is missing — a
+ * missing logo leaves its alt text in place; it never stops a send.
+ */
+function inlineImages(html: string) {
+  if (!html.includes(`cid:${HEADER_LOGO.cid}`)) return undefined;
+  const file = path.join(process.cwd(), HEADER_LOGO.file);
+  if (!existsSync(file)) return undefined;
+  return [{ filename: "tringlo-ai.png", path: file, cid: HEADER_LOGO.cid, contentDisposition: "inline" as const }];
 }
 
 export type MailResult = { ok: true } | { ok: false; reason: string };
@@ -70,6 +90,8 @@ export async function sendMail(message: MailMessage): Promise<MailResult> {
       subject: message.subject,
       text: message.text,
       html: message.html,
+      replyTo: message.replyTo,
+      attachments: inlineImages(message.html),
     });
 
     // "Accepted" means the SMTP server took it, which is as far as a sender

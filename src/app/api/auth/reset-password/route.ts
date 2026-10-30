@@ -4,10 +4,10 @@
 //
 // Sets a new password for an account.
 //
-// Dialo has no email service, so the usual "we sent you a link" flow cannot be
+// Tringlo has no email service, so the usual "we sent you a link" flow cannot be
 // built honestly — a form that claims to send an email that never arrives is
 // worse than no form at all. Recovery therefore uses the same trust model as
-// account creation: it works from a browser on the machine running Dialo, or
+// account creation: it works from a browser on the machine running Tringlo, or
 // with DIALO_INTERNAL_SECRET, and is refused through the public tunnel.
 //
 // Resetting a password signs out every existing session for that account. If
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     return fail(
       401,
       "unauthorized",
-      "For safety, a password can only be reset from the machine running Dialo."
+      "For safety, a password can only be reset from the machine running Tringlo."
     );
   }
 

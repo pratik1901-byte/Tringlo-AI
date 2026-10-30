@@ -11,6 +11,7 @@
 // the summary field, and no status that defaults to `connected`.
 // ============================================================
 
+import { isInstructionText } from "./instruction-text";
 import type { CallStatus, InterestLevel, TranscriptTurn } from "@/lib/types";
 import { resolveCallbackRequest } from "@/lib/scheduling/time";
 import type {
@@ -115,13 +116,36 @@ const STATUS_MAP: Record<string, CallStatus> = {
 };
 
 /**
- * Maps a Sarvam status onto a Dialo call status.
+ * Maps a Sarvam status onto a Tringlo call status.
  *
  * Returns null for anything unrecognised. The caller must then leave the call in
  * its current state — guessing `connected` here is exactly the fabrication this
  * pipeline exists to eliminate.
  */
 export function mapSarvamStatus(payload: SarvamWebhookPayload): CallStatus | null {
+  // Campaign attempts report the call itself in `connectivity_status`.
+  // `completion_status: "completed"` only says the attempt was processed, so it
+  // must never be read as "the customer answered".
+  if (payload.campaign_id) {
+    const connectivity = cleanString(payload.connectivity_status);
+    if (connectivity) {
+      const key = connectivity.toLowerCase().replace(/[\s-]+/g, "_");
+      return STATUS_MAP[key] ?? null;
+    }
+    return cleanString(payload.completion_status)?.toLowerCase() === "failed" ? "failed" : null;
+  }
+
+  // Inbound completions carry no status at all. A conversation took place if
+  // anyone said anything or the call lasted; otherwise the caller hung up
+  // before one began. Nothing more is claimed.
+  if (payload.deployment_id) {
+    const spoke = Array.isArray(payload.interaction_transcript) && payload.interaction_transcript.some(
+      (turn) => typeof turn?.en_text === "string" && turn.en_text.trim().length > 0
+    );
+    const lasted = typeof payload.duration === "number" && payload.duration > 0;
+    return spoke || lasted ? "connected" : "cancelled";
+  }
+
   const candidates = [payload.status, payload.connectivity_status, payload.completion_status];
 
   for (const candidate of candidates) {
@@ -155,6 +179,8 @@ export function mergeOutputVariables(
     if (!source || typeof source !== "object") continue;
     for (const [key, value] of Object.entries(source)) {
       if (value === null || value === undefined || value === "") continue;
+      // A too-short call reports the extraction prompt instead of a value.
+      if (isInstructionText(value)) continue;
       merged[key] = value;
     }
   }
@@ -305,7 +331,7 @@ export function resolveFollowUp(
 
   // Otherwise read whatever the agent passed through — agents frequently return
   // the customer's own phrasing ("in 5 minutes", "tomorrow at 4 PM") rather than
-  // a resolved timestamp, and a request Dialo cannot read is a request lost.
+  // a resolved timestamp, and a request Tringlo cannot read is a request lost.
   if (!resolved || resolved.kind !== "exact") {
     for (const candidate of [nextStep, date && time ? `${date} ${time}` : null, date, time]) {
       if (!candidate) continue;
@@ -326,7 +352,7 @@ export function resolveFollowUp(
   return {
     required: true,
     // Only an exact instant may be scheduled. A date without a time is recorded
-    // and surfaced for the time to be asked for — never filled in by Dialo.
+    // and surfaced for the time to be asked for — never filled in by Tringlo.
     scheduledTime: resolved.kind === "exact" ? resolved.instant : null,
     rawRequest,
     timezone,
@@ -346,7 +372,7 @@ export function resolveFollowUp(
 
 export interface ParsedSarvamEvent {
   attemptId: string;
-  /** Null when Sarvam sent a status Dialo does not recognise. */
+  /** Null when Sarvam sent a status Tringlo does not recognise. */
   status: CallStatus | null;
   rawStatus: string | null;
   connectivityStatus: string | null;

@@ -1,7 +1,7 @@
 "use client";
 
 // ============================================================
-// Dialo AI — Charts on a Phone
+// Tringlo AI — Charts on a Phone
 // ============================================================
 //
 // On a desktop a chart is read by hovering, and the tooltip floats beside the

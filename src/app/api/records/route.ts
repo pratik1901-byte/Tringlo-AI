@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { notFound, ownedByTenant, requireAuth, scopeToTenant } from "@/lib/auth/guard";
-import { getCallRecord, getCallRecords, getLegacyTenantId } from "@/lib/db";
+import { getCallRecord, getCallRecords } from "@/lib/db";
 
 /** A page the client can render without holding thousands of rows in memory. */
 const DEFAULT_LIMIT = 50;
@@ -23,20 +23,19 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response;
 
   try {
-    const legacy = getLegacyTenantId();
     const id = request.nextUrl.searchParams.get("id");
 
     if (id) {
       const record = getCallRecord(id);
       // Another tenant's record is reported as missing, not as forbidden: a 403
       // would confirm that the id exists.
-      if (!record || !ownedByTenant(record, auth.tenantId, legacy)) {
+      if (!record || !ownedByTenant(record, auth.tenantId)) {
         return notFound("Record not found.");
       }
       return NextResponse.json({ record });
     }
 
-    const all = scopeToTenant(getCallRecords(), auth.tenantId, legacy);
+    const all = scopeToTenant(getCallRecords(), auth.tenantId);
 
     const params = request.nextUrl.searchParams;
     const limit = Math.min(

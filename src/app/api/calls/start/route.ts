@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { requireAuth } from "@/lib/auth/guard";
 import { placeCall } from "@/lib/calls/place-call";
+import { providerConfigFor } from "@/lib/providers/config";
+import { businessContextReach } from "@/lib/providers/sarvam/variables";
 import { clientKey, rateLimit } from "@/lib/security/rate-limit";
 
 function resolveWebhookBaseUrl(request: NextRequest): string {
@@ -16,7 +18,7 @@ function resolveWebhookBaseUrl(request: NextRequest): string {
 /**
  * POST /api/calls/start
  *
- * Places one real outbound call: Dialo -> Sarvam Instant Outbound -> Vobiz.
+ * Places one real outbound call: Tringlo -> Sarvam Instant Outbound -> Vobiz.
  *
  * The work lives in `placeCall`, which the follow-up scheduler also uses, so a
  * manual call and an autonomous callback pass through identical guards.
@@ -61,6 +63,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // A non-blocking heads-up, not a failure: the call went out, but if the
+    // agent declares nothing through which this workspace's business can
+    // travel, it will speak from its own Sarvam-side prompt. This is the
+    // signal behind "the agent talked about the wrong business".
+    const outbound = providerConfigFor(auth.tenantId)?.outbound;
+    const reach = outbound ? businessContextReach(outbound.agentVariables, outbound.variableMappings) : null;
+    const warnings = reach && !reach.reaches
+      ? ["This agent receives no business variables, so it speaks from its Sarvam-side prompt, not this workspace's company and product. Declare or map the agent's variables on the Settings page."]
+      : [];
+
     return NextResponse.json({
       callId: result.callId,
       attemptId: result.attemptId,
@@ -68,6 +80,7 @@ export async function POST(request: NextRequest) {
       provider: "sarvam",
       status: "calling",
       knowledgeSources: result.knowledgeSources,
+      warnings,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";

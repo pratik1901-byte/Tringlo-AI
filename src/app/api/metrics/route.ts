@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { callDirection } from "@/lib/types";
 import { requireAuth, scopeToTenant } from "@/lib/auth/guard";
-import { getCallRecords, getFollowUps, getLeads, getLegacyTenantId } from "@/lib/db";
+import { getCallRecords, getFollowUps, getLeads } from "@/lib/db";
 import {
   computeCallMetrics,
   computeDailySeries,
@@ -25,10 +26,12 @@ export async function GET(request: Request) {
   try {
     // Every figure is computed from this tenant's rows only, so one business
     // can never see another reflected in its own totals.
-    const legacy = getLegacyTenantId();
-    const records = scopeToTenant(getCallRecords(), auth.tenantId, legacy);
-    const leads = scopeToTenant(getLeads(), auth.tenantId, legacy);
-    const followUps = scopeToTenant(getFollowUps(), auth.tenantId, legacy);
+    // Outbound analytics: calls Tringlo placed. Inbound has its own analytics.
+    const records = scopeToTenant(getCallRecords(), auth.tenantId).filter(
+      (record) => callDirection(record) === "outbound"
+    );
+    const leads = scopeToTenant(getLeads(), auth.tenantId);
+    const followUps = scopeToTenant(getFollowUps(), auth.tenantId);
 
     const metrics = computeCallMetrics(records, leads, followUps);
 

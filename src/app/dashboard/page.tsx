@@ -14,6 +14,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { useAuthStore } from "@/lib/store";
 import { useCallRecords, useMetrics } from "@/lib/use-dialo-data";
 import { useNow } from "@/lib/use-now";
 import { useReveal } from "@/lib/animation";
@@ -21,6 +22,7 @@ import {
   EMPTY,
   formatCount,
   formatDate,
+  formatPhone,
   formatDelta,
   formatDuration,
   formatPercent,
@@ -70,6 +72,7 @@ export default function DashboardPage() {
   const kpiRef = useReveal<HTMLDivElement>({ deps: [Boolean(metrics)] });
   const chartsRef = useReveal<HTMLDivElement>({ delay: 0.1, deps: [Boolean(metrics)] });
 
+  const user = useAuthStore((state) => state.user);
   const today = new Date().toLocaleDateString(undefined, {
     weekday: "long",
     day: "numeric",
@@ -77,10 +80,31 @@ export default function DashboardPage() {
     year: "numeric",
   });
 
+  // A greeting rather than a label: the first thing on the first page.
+  const hour = new Date().getHours();
+  const firstName = user?.name?.trim().split(/\s+/)[0];
+  const greeting = `${hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"}${firstName ? `, ${firstName}` : ""}`;
+  const header = (
+    <PageHeader
+      eyebrow="Overview"
+      title={greeting}
+      description={
+        <>
+          {user?.tenantName ? (
+            <>
+              Here&apos;s how <span className="font-medium text-foreground">{user.tenantName}</span> is doing.{" "}
+            </>
+          ) : null}
+          {today}
+        </>
+      }
+    />
+  );
+
   if (isLoading && !metrics) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Overview" description={today} />
+        {header}
         <LoadingState label="Loading call data" />
       </div>
     );
@@ -89,7 +113,7 @@ export default function DashboardPage() {
   if (error && !metrics) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Overview" description={today} />
+        {header}
         <ErrorState message={error} onRetry={refresh} />
       </div>
     );
@@ -99,10 +123,11 @@ export default function DashboardPage() {
 
   const hasCalls = metrics.totalCalls > 0;
   const recentCalls = records.slice(0, 8);
+  const inboundCalls = records.filter((call) => call.direction === "inbound").length;
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Overview" description={today} />
+      {header}
 
       {error && <ErrorState message={error} onRetry={refresh} />}
 
@@ -111,13 +136,14 @@ export default function DashboardPage() {
           three screens down. */}
       <div ref={kpiRef} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 phone:grid-cols-2! phone:gap-3 phone:landscape:grid-cols-3!">
         <MetricCard
-          label="Calls today"
+          featured
+          label="Calls placed today"
           value={metrics.callsToday}
           format={(value) => formatCount(Math.round(value))}
           caption={
             metrics.callsTodayDelta === null
               ? "No calls yesterday to compare"
-              : `${formatDelta(metrics.callsTodayDelta)} vs yesterday`
+              : `${formatDelta(metrics.callsTodayDelta, "", 0)} vs yesterday`
           }
           captionTone={
             metrics.callsTodayDelta === null
@@ -128,7 +154,7 @@ export default function DashboardPage() {
           }
         />
         <MetricCard
-          label="Total calls"
+          label="Calls placed"
           value={metrics.totalCalls}
           format={(value) => formatCount(Math.round(value))}
           caption={
@@ -192,6 +218,17 @@ export default function DashboardPage() {
         />
       </div>
 
+      {/* Said plainly, because the figures above exclude them. */}
+      {inboundCalls > 0 && (
+        <p className="-mt-1 text-xs text-muted-foreground">
+          These figures cover the calls Tringlo placed.{" "}
+          <Link href="/inbound" className="font-medium text-primary hover:underline">
+            {inboundCalls} inbound {inboundCalls === 1 ? "call" : "calls"}
+          </Link>{" "}
+          {inboundCalls === 1 ? "is" : "are"} counted separately.
+        </p>
+      )}
+
       {!hasCalls ? (
         <EmptyState
           icon={Upload}
@@ -219,10 +256,10 @@ export default function DashboardPage() {
       ) : (
         <>
           <div ref={chartsRef} className="grid gap-4 lg:grid-cols-5">
-            <section className="rounded-lg border bg-card p-5 lg:col-span-3 phone:p-4">
+            <section className="rounded-xl border bg-card p-6 lg:col-span-3 phone:p-4">
               <div className="flex items-baseline justify-between">
                 <div>
-                  <h2 className="font-heading text-sm font-semibold tracking-tight">Call activity</h2>
+                  <h2 className="font-heading text-[15px] font-semibold tracking-tight">Call activity</h2>
                   <p className="mt-0.5 text-xs text-muted-foreground">Last 7 days</p>
                 </div>
                 <div className="flex items-center gap-4 text-xs text-muted-foreground phone:hidden">
@@ -297,8 +334,8 @@ export default function DashboardPage() {
               </div>
             </section>
 
-            <section className="rounded-lg border bg-card p-5 lg:col-span-2 phone:p-4">
-              <h2 className="font-heading text-sm font-semibold tracking-tight">Outcomes</h2>
+            <section className="rounded-xl border bg-card p-6 lg:col-span-2 phone:p-4">
+              <h2 className="font-heading text-[15px] font-semibold tracking-tight">Outcomes</h2>
               <p className="mt-0.5 text-xs text-muted-foreground">All completed attempts</p>
 
               {(data?.outcomes.length ?? 0) === 0 ? (
@@ -395,9 +432,9 @@ export default function DashboardPage() {
             </section>
           </div>
 
-          <section className="overflow-hidden rounded-lg border bg-card">
+          <section className="overflow-hidden rounded-xl border bg-card">
             <header className="flex items-center justify-between border-b px-5 py-3.5 phone:px-4">
-              <h2 className="font-heading text-sm font-semibold tracking-tight">Recent calls</h2>
+              <h2 className="font-heading text-[15px] font-semibold tracking-tight">Recent calls</h2>
               <Link href="/results" className="text-xs font-medium text-primary hover:underline">
                 View all
               </Link>
@@ -410,7 +447,7 @@ export default function DashboardPage() {
               {recentCalls.map((call) => (
                 <li key={call.id} className="px-4 py-3">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="min-w-0 truncate text-sm font-medium">{call.lead.name}</p>
+                    <p className="min-w-0 truncate text-sm font-medium">{call.lead.name} {call.direction === "inbound" && <span className="ml-1.5 rounded bg-teal-50 px-1 py-0.5 text-[10px] font-semibold uppercase text-teal-700 dark:bg-teal-950/40 dark:text-teal-300">In</span>}</p>
                     <StatusBadge
                       status={call.status}
                       requestedAt={call.requestedAt}
@@ -419,7 +456,7 @@ export default function DashboardPage() {
                     />
                   </div>
                   <div className="mt-1 flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                    <span className="truncate font-mono">{call.lead.phone}</span>
+                    <span className="truncate font-mono">{formatPhone(call.lead.phone)}</span>
                     <span className="shrink-0 tabular-nums">
                       {formatDuration(call.duration)} · {formatTime(call.startedAt || call.requestedAt) || EMPTY}
                     </span>
@@ -442,9 +479,9 @@ export default function DashboardPage() {
                 <tbody>
                   {recentCalls.map((call) => (
                     <tr key={call.id} className="border-b transition-colors last:border-b-0 hover:bg-muted/40">
-                      <td className="px-5 py-3 font-medium">{call.lead.name}</td>
+                      <td className="px-5 py-3 font-medium">{call.lead.name} {call.direction === "inbound" && <span className="ml-1.5 rounded bg-teal-50 px-1 py-0.5 text-[10px] font-semibold uppercase text-teal-700 dark:bg-teal-950/40 dark:text-teal-300">In</span>}</td>
                       <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
-                        {call.lead.phone}
+                        {formatPhone(call.lead.phone)}
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge

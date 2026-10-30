@@ -1,7 +1,7 @@
 "use client";
 
 // ============================================================
-// Dialo AI — Active Call Banner
+// Tringlo AI — Active Call Banner
 // ============================================================
 // Makes a call that is still running findable from anywhere, including after a
 // browser refresh.

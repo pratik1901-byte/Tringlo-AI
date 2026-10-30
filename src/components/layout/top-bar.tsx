@@ -1,12 +1,34 @@
 "use client";
 
-import { useState } from "react";
+import { useSyncExternalStore } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { Moon, Sun } from "lucide-react";
+import { ChevronRight, Moon, Sun } from "lucide-react";
 
+import { useAuthStore } from "@/lib/store";
 import { useProviderStatus } from "@/lib/use-dialo-data";
 import { LiveClock } from "./live-clock";
+
+/** Where the chosen theme is remembered; read before first paint by the root layout. */
+const THEME_KEY = "tringlo-theme";
+
+/**
+ * Whether the dark theme is on, read from the class the root layout's script
+ * set before the first paint — the toggle reads it rather than re-deciding.
+ * The server cannot know, so it renders the light icon and React swaps it
+ * after hydration without a mismatch.
+ */
+function useIsDark(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const watch = new MutationObserver(onChange);
+      watch.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+      return () => watch.disconnect();
+    },
+    () => document.documentElement.classList.contains("dark"),
+    () => false
+  );
+}
 
 const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Overview",
@@ -17,22 +39,24 @@ const PAGE_TITLES: Record<string, string> = {
   "/follow-ups": "Follow-ups",
   "/agent": "AI agent",
   "/analytics": "Analytics",
+  "/inbound": "Inbound calls",
   "/settings": "Settings",
 };
 
 export function TopBar() {
   const pathname = usePathname();
-  // The inline bootstrap script in the root layout has already set the class, so
-  // the toggle reads the DOM rather than re-deciding and re-rendering.
-  const [isDark, setIsDark] = useState(() =>
-    typeof document === "undefined" ? false : document.documentElement.classList.contains("dark")
-  );
+  const isDark = useIsDark();
+  const workspace = useAuthStore((state) => state.user?.tenantName);
 
   const toggleTheme = () => {
     const next = !isDark;
-    setIsDark(next);
     document.documentElement.classList.toggle("dark", next);
-    localStorage.setItem("dialo-theme", next ? "dark" : "light");
+    try {
+      localStorage.setItem(THEME_KEY, next ? "dark" : "light");
+    } catch {
+      // Storage refused (a private window, say): the switch still applies
+      // for this visit; it just will not be remembered.
+    }
   };
 
   return (
@@ -43,9 +67,19 @@ export function TopBar() {
     // out of 3.5rem: under border-box a plain min-height would include the
     // padding, and on a notched phone the header's content would be squeezed
     // into a few pixels.
-    <header className="flex h-14 shrink-0 items-center justify-between border-b bg-card px-6 phone:px-4 phone:pt-safe phone:h-[calc(3.5rem+env(safe-area-inset-top))]">
-      <h1 className="text-sm font-medium text-foreground phone:text-base phone:font-semibold">
-        {PAGE_TITLES[pathname] ?? "Dialo AI"}
+    <header className="flex h-14 shrink-0 items-center justify-between border-b px-6 phone:bg-card phone:px-4 phone:pt-safe phone:h-[calc(3.5rem+env(safe-area-inset-top))]">
+      {/* Desktop: where you are — workspace, then page — since the page names
+          itself in its own heading below. A phone shows only the page title:
+          there it is the one heading on screen. */}
+      <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2 text-[13px] phone:hidden">
+        <span className="truncate text-muted-foreground">{workspace || "Tringlo AI"}</span>
+        <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" aria-hidden="true" />
+        <span className="truncate font-medium text-foreground" aria-current="page">
+          {PAGE_TITLES[pathname] ?? "Tringlo AI"}
+        </span>
+      </nav>
+      <h1 className="hidden text-base font-semibold text-foreground phone:block">
+        {PAGE_TITLES[pathname] ?? "Tringlo AI"}
       </h1>
 
       <div className="flex items-center gap-3 phone:gap-2">
@@ -70,7 +104,7 @@ export function TopBar() {
 }
 
 /**
- * Reports whether Dialo can actually place a call right now.
+ * Reports whether Tringlo can actually place a call right now.
  *
  * Replaces the old always-on "AI Active" badge, which said the same thing
  * whether or not the provider was configured at all.
@@ -80,7 +114,7 @@ function ProviderIndicator() {
 
   if (isLoading || !data) {
     return (
-      <span className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs text-muted-foreground">
+      <span className="flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
         <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
         Checking
       </span>
@@ -93,10 +127,10 @@ function ProviderIndicator() {
     <Link
       href="/settings"
       title={data.providerDetails || data.details}
-      className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+      className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
         ready
-          ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-400"
-          : "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-400"
+          ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-400/10 dark:text-emerald-300 dark:hover:bg-emerald-400/15"
+          : "bg-amber-50 text-amber-800 hover:bg-amber-100 dark:bg-amber-400/10 dark:text-amber-300 dark:hover:bg-amber-400/15"
       }`}
     >
       <span

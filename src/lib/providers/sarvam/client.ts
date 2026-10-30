@@ -5,6 +5,8 @@
 // and is never logged, returned to the browser, or written to the database.
 // ============================================================
 
+import type { PlatformCredentials } from "@/lib/providers/types";
+
 import type { SarvamOutboundPayload, SarvamOutboundResponse } from "./types";
 
 const SARVAM_APPS_BASE_URL = "https://apps.sarvam.ai";
@@ -44,6 +46,7 @@ export class SarvamVoiceAgentsClient {
     return readEnv("SARVAM_API_KEY").length > 0;
   }
 
+
   /**
    * POST /api/outbounds/v1/orgs/{org_id}/workspaces/{workspace_id}/outbounds
    *
@@ -51,11 +54,10 @@ export class SarvamVoiceAgentsClient {
    * was valid — not that the phone rang.
    */
   public async createInstantOutbound(
-    payload: SarvamOutboundPayload
+    payload: SarvamOutboundPayload,
+    credentials: PlatformCredentials
   ): Promise<SarvamOutboundResponse> {
-    const apiKey = readEnv("SARVAM_API_KEY");
-    const orgId = readEnv("SARVAM_ORG_ID");
-    const workspaceId = readEnv("SARVAM_WORKSPACE_ID");
+    const { apiKey, orgId, workspaceId } = credentials;
 
     if (!apiKey) {
       throw new SarvamClientError(

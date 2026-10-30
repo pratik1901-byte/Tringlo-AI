@@ -79,8 +79,10 @@ function words(...parts: Array<string | undefined>): string[] {
  * A field the business left blank produces no document — silence rather than a
  * plausible-sounding default.
  */
-function buildDocuments(companyId: string, config?: Partial<AgentConfig>): DocInput[] {
-  const company = config?.companyName?.trim() || companyId;
+function buildDocuments(workspaceId: string, config?: Partial<AgentConfig>): DocInput[] {
+  // Falls back to nothing rather than to the workspace id: an id is not a
+  // company name, and the agent must never read one out.
+  const company = config?.companyName?.trim() || "";
   const product = config?.productName?.trim();
   const docs: DocInput[] = [];
 
@@ -91,7 +93,7 @@ function buildDocuments(companyId: string, config?: Partial<AgentConfig>): DocIn
       title: "Company",
       section: "Overview",
       content: [
-        `Company: ${company}.`,
+        company ? `Company: ${company}.` : "",
         config?.industry?.trim() ? `Industry: ${config.industry.trim()}.` : "",
         companyDescription ? `About: ${companyDescription}` : "",
       ]
@@ -167,7 +169,7 @@ function buildDocuments(companyId: string, config?: Partial<AgentConfig>): DocIn
       document_type: "sales_guidelines",
       title: "Qualification",
       section: "Configured criteria",
-      // Only what the business configured. Dialo adds no qualification rules of
+      // Only what the business configured. Tringlo adds no qualification rules of
       // its own — inventing one is how "personal use is not a fit" reached a call
       // for a product built for families.
       content: [
@@ -190,7 +192,7 @@ function buildDocuments(companyId: string, config?: Partial<AgentConfig>): DocIn
       "Never invent pricing, discounts, features, partnerships, certifications or guarantees.",
       "Never narrow or extend who the product is for beyond what is stated above.",
       'If asked something the approved information does not cover, say: "I don\'t want to give you incorrect information — I can have a colleague confirm that for you."',
-      `If asked whether you are an AI, say yes, you are an AI assistant representing ${company}.`,
+      `If asked whether you are an AI, say yes, you are an AI assistant.${company ? ` You represent ${company}.` : ""}`,
       "If the person asks not to be called again, acknowledge it and end the call politely.",
       "If the person asks for a human, agree and take their details.",
     ].join("\n"),
@@ -209,19 +211,19 @@ const MAX_CHUNKS = 6;
  * company, the product and whatever the query touches — not the whole index.
  */
 export function buildAgentKnowledgeContext(
-  companyId: string,
+  workspaceId: string,
   agentConfig?: Partial<AgentConfig>,
   queryKeywords?: string[]
 ): RetrievalResult {
   const fingerprint = configFingerprint(agentConfig);
 
   // Rebuild when the configuration has changed since this scope was registered.
-  if (builtFingerprints.get(companyId) !== fingerprint) {
-    knowledgeRegistry.registerKnowledge(companyId, buildDocuments(companyId, agentConfig));
-    builtFingerprints.set(companyId, fingerprint);
+  if (builtFingerprints.get(workspaceId) !== fingerprint) {
+    knowledgeRegistry.registerKnowledge(workspaceId, buildDocuments(workspaceId, agentConfig));
+    builtFingerprints.set(workspaceId, fingerprint);
   }
 
-  const scope = knowledgeRegistry.getScope(companyId);
+  const scope = knowledgeRegistry.getScope(workspaceId);
   const approved = scope?.chunks.filter((chunk) => chunk.metadata.approved) ?? [];
 
   if (approved.length === 0) {

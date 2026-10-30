@@ -1,7 +1,7 @@
 "use client";
 
 // ============================================================
-// Dialo AI — Phone Navigation
+// Tringlo AI — Phone Navigation
 // ============================================================
 //
 // A bottom tab bar, and a sheet for everything that does not fit in it.
@@ -21,7 +21,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ClipboardList, Clock, LayoutDashboard, LogOut, MoreHorizontal, Users, X } from "lucide-react";
 
-import { useAuthStore } from "@/lib/store";
+import { useAccountCenter, useAuthStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { isNavActive, navigation } from "./sidebar";
 
@@ -129,6 +129,7 @@ function MoreSheet({
 }) {
   const user = useAuthStore((state) => state.user);
   const signOut = useAuthStore((state) => state.signOut);
+  const openAccount = useAccountCenter((state) => state.show);
   const sheetRef = useRef<HTMLDivElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
 
@@ -229,15 +230,24 @@ function MoreSheet({
             desktop: it is the difference between "my data is missing" and
             "I am signed into the other workspace". */}
         <div className="mx-4 mb-4 flex items-center gap-3 rounded-xl border border-border px-4 py-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-            {(user?.name || "U").charAt(0).toUpperCase()}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-foreground">{user?.name || "User"}</p>
-            <p className="truncate text-xs text-muted-foreground">
-              {user?.tenantName || user?.email || ""}
-            </p>
-          </div>
+          {/* Tapping the name opens the Account Center. */}
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              openAccount();
+            }}
+            aria-haspopup="dialog"
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left active:opacity-70"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+              {(user?.name || "U").charAt(0).toUpperCase()}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-foreground">{user?.name || "User"}</p>
+              <p className="truncate text-xs text-muted-foreground">Account settings</p>
+            </div>
+          </button>
           <button
             type="button"
             onClick={() => {

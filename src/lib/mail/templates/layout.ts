@@ -1,8 +1,8 @@
 // ============================================================
-// Dialo AI — Email Layout
+// Tringlo AI — Email Layout
 // ============================================================
 //
-// The frame every Dialo email is built in, and the blocks they are built from.
+// The frame every Tringlo email is built in, and the blocks they are built from.
 //
 // Email is not the web. The constraints this is written to:
 //
@@ -12,9 +12,11 @@
 //   - Gmail drops much of <head> in some clients and ignores classes it
 //     cannot resolve, so every style that matters is inline. The <style>
 //     block only adds progressive extras: dark mode and small-screen tweaks.
-//   - Images are blocked by default in Gmail and Outlook. There are none.
-//     The brand mark is a waveform drawn from table cells — the same motif
-//     as the sign-in screen — so the email is branded before anything loads.
+//   - Images may be blocked until the reader allows them. The one image —
+//     the Tringlo AI logo in the header — travels inside the email as an
+//     inline attachment rather than a link, so most clients show it at once,
+//     and where they do not, its alt text reads "Tringlo AI" in the same
+//     place, on the same dark band. Nothing else depends on an image.
 //   - Gmail clips messages over 102 KB behind "View entire message". These
 //     stay far under that; the templates test asserts it.
 //
@@ -22,26 +24,34 @@
 // named `<script>` arrives in the inbox as that literal text.
 // ============================================================
 
+// The Tringlo AI palette — the website's own: warm ink on cream, iris for
+// accents, and the lime used once, as the rule under the logo.
 export const BRAND = {
-  indigo: "#4F46E5",
-  indigoSoft: "#EEF2FF",
-  indigoInk: "#3730A3",
-  ink: "#1C1917",
-  body: "#44403C",
+  /** Accent text and links: the website's deep iris (6.7:1 on white). */
+  iris: "#3C48D9",
+  /** Accent marks that are not text: bars, the "connected" segment. */
+  irisBright: "#5C69F8",
+  irisSoft: "#EEF0FE",
+  irisInk: "#2B35A8",
+  lime: "#E8F056",
+  /** The header band the logo sits on. */
+  band: "#171614",
+  ink: "#171614",
+  body: "#494640",
   // Text greys, measured against the surfaces they sit on (WCAG AA, 4.5:1):
-  //   muted  #6B6560 — 5.6:1 on white, 5.1:1 on the canvas
+  //   muted  #6B675F — 5.7:1 on white, 5.5:1 on the canvas
   //   faint  #78716C — 4.8:1 on white; used only on white surfaces
-  //   footer #57534E / footerFaint #6B6560 — on the canvas, outside the card
-  muted: "#6B6560",
+  //   footer #57534E / footerFaint #6B675F — on the canvas, outside the card
+  muted: "#6B675F",
   faint: "#78716C",
   footer: "#57534E",
-  footerFaint: "#6B6560",
+  footerFaint: "#6B675F",
   // Decorative only (bars, rules) — never text.
-  decor: "#A8A29E",
-  line: "#E7E5E4",
-  canvas: "#F4F3F0",
+  decor: "#CBC6BD",
+  line: "#E0DFDC",
+  canvas: "#FFFCF4",
   surface: "#FFFFFF",
-  soft: "#FAFAF9",
+  soft: "#FFFCF4",
   positive: "#0F766E",
   positiveSoft: "#F0FDFA",
   warning: "#B45309",
@@ -54,6 +64,21 @@ export const BRAND = {
 const FONT =
   "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif";
 const MONO = "ui-monospace,'SF Mono',SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace";
+/** The website's headings are a serif; email cannot load its font, so this
+ *  names it first and falls back to the serifs every client has. */
+const SERIF = "'EB Garamond',Georgia,'Times New Roman',Times,serif";
+
+/**
+ * The header logo: the signal mark beside the Tringlo AI wordmark, drawn for
+ * the dark band. Sent as an inline attachment the mailer adds whenever an
+ * email refers to it, so it shows without fetching anything from the web.
+ */
+export const HEADER_LOGO = {
+  cid: "tringlo-lockup@tringlo.ai",
+  file: "public/brand/email-lockup-on-dark.png",
+  width: 164,
+  height: 28,
+} as const;
 
 /** Escapes text for HTML. Everything dynamic goes through this. */
 export function esc(value: unknown): string {
@@ -95,7 +120,7 @@ export function divider(margin = 24): string {
  * Label/value rows.
  *
  * Rows with an empty value are dropped rather than shown as blank, so an
- * email never displays a field Dialo has no data for.
+ * email never displays a field Tringlo has no data for.
  */
 export function detailsTable(rows: Array<{ label: string; valueHtml: string | null | undefined }>): string {
   const kept = rows.filter((row) => row.valueHtml && row.valueHtml.trim());
@@ -119,12 +144,12 @@ export function detailsTable(rows: Array<{ label: string; valueHtml: string | nu
  * rounded everywhere else, which is the accepted trade.
  */
 export function button(label: string, href: string, options: { subtle?: boolean } = {}): string {
-  const bg = options.subtle ? BRAND.surface : BRAND.indigo;
-  const fg = options.subtle ? BRAND.indigoInk : "#FFFFFF";
-  const border = options.subtle ? BRAND.line : BRAND.indigo;
+  const bg = options.subtle ? BRAND.surface : BRAND.ink;
+  const fg = options.subtle ? BRAND.ink : BRAND.canvas;
+  const border = options.subtle ? BRAND.line : BRAND.ink;
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-<td align="center" bgcolor="${bg}" style="border-radius:8px;background:${bg};${options.subtle ? `border:1px solid ${border};` : ""}">
-<a class="${options.subtle ? "t-link" : "btn"}" href="${esc(href)}" target="_blank" style="display:inline-block;padding:13px 24px;font-family:${FONT};font-size:14px;font-weight:600;line-height:20px;color:${fg};background:${bg};text-decoration:none;border-radius:8px;">${esc(label)}</a>
+<td align="center" bgcolor="${bg}" style="border-radius:6px;background:${bg};${options.subtle ? `border:1px solid ${border};` : ""}">
+<a class="${options.subtle ? "t-link" : "btn"}" href="${esc(href)}" target="_blank" style="display:inline-block;padding:13px 24px;font-family:${FONT};font-size:14px;font-weight:600;line-height:20px;color:${fg};background:${bg};text-decoration:none;border-radius:6px;">${esc(label)}</a>
 </td></tr></table>`;
 }
 
@@ -132,7 +157,7 @@ export function button(label: string, href: string, options: { subtle?: boolean 
 export function callout(html: string, tone: "neutral" | "info" | "warning" = "neutral"): string {
   const palette = {
     neutral: { bg: BRAND.soft, border: BRAND.line, bar: BRAND.decor },
-    info: { bg: BRAND.indigoSoft, border: "#E0E7FF", bar: BRAND.indigo },
+    info: { bg: BRAND.irisSoft, border: "#DCE0FD", bar: BRAND.irisBright },
     warning: { bg: BRAND.warningSoft, border: "#FDE68A", bar: BRAND.warning },
   }[tone];
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;">
@@ -163,7 +188,7 @@ export function statTiles(
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;">
 <tr><td class="tile-inner" bgcolor="${BRAND.soft}" style="padding:16px 18px;background:${BRAND.soft};border:1px solid ${BRAND.line};border-radius:10px;">
 <p class="t-muted" style="margin:0;font-family:${FONT};font-size:12px;line-height:1.4;color:${BRAND.muted};">${esc(tile.label)}</p>
-<p class="tile-value" style="margin:6px 0 0;font-family:${FONT};font-size:28px;font-weight:700;line-height:1.1;letter-spacing:-0.02em;color:${BRAND.ink};">${esc(tile.value)}</p>
+<p class="tile-value" style="margin:6px 0 0;font-family:${SERIF};font-size:32px;font-weight:400;line-height:1.05;letter-spacing:-0.01em;color:${BRAND.ink};">${esc(tile.value)}</p>
 ${tile.note ? `<p class="${tile.tone === "positive" ? "t-positive" : tile.tone === "negative" ? "t-negative" : "t-muted"}" style="margin:6px 0 0;font-family:${FONT};font-size:12px;line-height:1.4;color:${noteColor};">${esc(tile.note)}</p>` : ""}
 </td></tr></table>
 </td>`;
@@ -226,7 +251,7 @@ export function phoneLink(phone: string | null | undefined): string | null {
   if (!phone) return null;
   const dial = phone.replace(/[^\d+]/g, "");
   if (!dial) return esc(phone);
-  return `<a class="t-link" href="tel:${esc(dial)}" style="color:${BRAND.indigo};text-decoration:none;font-family:${MONO};font-size:13px;">${esc(phone)}</a>`;
+  return `<a class="t-link" href="tel:${esc(dial)}" style="color:${BRAND.iris};text-decoration:none;font-family:${MONO};font-size:13px;">${esc(phone)}</a>`;
 }
 
 /** Monospace text, for codes and numbers. */
@@ -237,7 +262,7 @@ export function mono(text: string, size = 13): string {
 /** A small rounded status pill. */
 export function pill(text: string, tone: "on" | "off" | "positive" | "warning"): string {
   const palette = {
-    on: { bg: BRAND.indigoSoft, fg: BRAND.indigoInk },
+    on: { bg: BRAND.irisSoft, fg: BRAND.irisInk },
     positive: { bg: BRAND.positiveSoft, fg: BRAND.positive },
     warning: { bg: BRAND.warningSoft, fg: BRAND.warning },
     off: { bg: BRAND.soft, fg: BRAND.muted },
@@ -249,19 +274,19 @@ export function pill(text: string, tone: "on" | "off" | "positive" | "warning"):
 // Frame
 // ------------------------------------------------------------------
 
-/** The waveform mark, drawn from table cells so it renders with images off. */
-function brandMark(): string {
-  const heights = [6, 12, 18, 10, 14, 7];
-  const bars = heights
-    .map(
-      (height) =>
-        `<td valign="bottom" style="padding:0 1px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="3" height="${height}" bgcolor="${BRAND.indigo}" style="width:3px;height:${height}px;background:${BRAND.indigo};border-radius:2px;font-size:0;line-height:0;">&nbsp;</td></tr></table></td>`
-    )
-    .join("");
-  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-<td valign="bottom" style="padding:0 10px 0 0;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" height="18"><tr>${bars}</tr></table></td>
-<td class="t-ink" valign="middle" style="font-family:${FONT};font-size:16px;font-weight:700;letter-spacing:-0.01em;color:${BRAND.ink};">Dialo<span class="t-accent" style="color:${BRAND.indigo};">&nbsp;AI</span></td>
-</tr></table>`;
+/**
+ * The header: the logo on a dark band, the context label opposite, and the
+ * lime rule beneath — the same lockup and the same lime as the website.
+ * If images are held back, the alt text stands in, light on the dark band.
+ */
+function headerBand(context: string): string {
+  return `<tr><td class="band" bgcolor="${BRAND.band}" style="padding:20px 36px;background:${BRAND.band};border-radius:13px 13px 0 0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+<td valign="middle"><img src="cid:${HEADER_LOGO.cid}" width="${HEADER_LOGO.width}" height="${HEADER_LOGO.height}" alt="Tringlo AI" style="display:block;width:${HEADER_LOGO.width}px;height:${HEADER_LOGO.height}px;border:0;outline:none;text-decoration:none;font-family:${FONT};font-size:16px;font-weight:600;letter-spacing:0.12em;line-height:28px;color:${BRAND.canvas};"></td>
+<td align="right" valign="middle" style="font-family:${MONO};font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#B5B1A8;">${esc(context)}</td>
+</tr></table>
+</td></tr>
+<tr><td height="3" bgcolor="${BRAND.lime}" style="height:3px;background:${BRAND.lime};font-size:0;line-height:0;">&nbsp;</td></tr>`;
 }
 
 export interface EmailFrame {
@@ -281,11 +306,11 @@ export interface EmailFrame {
 }
 
 /**
- * Wraps content in the Dialo frame.
+ * Wraps content in the Tringlo frame.
  *
- * Structure: canvas → 600px card with an indigo top rule → header with the
- * mark and a context label → eyebrow, title, content → footer outside the
- * card. The footer says plainly why the email was sent; it offers no
+ * Structure: cream canvas → 600px card → dark header band with the logo and
+ * a context label, lime rule beneath → eyebrow, serif title, content →
+ * footer outside the card. The footer says plainly why the email was sent; it offers no
  * unsubscribe link because these are transactional or opt-in-in-Settings,
  * and a link that does nothing would be worse than none.
  */
@@ -331,12 +356,12 @@ export function renderEmail(frame: EmailFrame): string {
     .t-ink, .title, .tile-value, .callout strong { color:#FAFAF9 !important; }
     .t-body { color:#D6D3D1 !important; }
     .t-muted, .footer-text { color:#A8A29E !important; }
-    .t-accent, .t-link { color:#A5B4FC !important; }
+    .t-accent, .t-link { color:#A9B0FB !important; }
     .t-positive { color:#5EEAD4 !important; }
     .t-negative { color:#FCA5A5 !important; }
     .b-line { border-color:#292524 !important; }
     .tile-inner, .callout { background:#1C1917 !important; border-color:#292524 !important; }
-    .pill-on { background:#272449 !important; color:#C7D2FE !important; }
+    .pill-on { background:#23264F !important; color:#C9CEFD !important; }
     .pill-off { background:#292524 !important; color:#A8A29E !important; }
     .pill-positive { background:#042F2E !important; color:#5EEAD4 !important; }
     .pill-warning { background:#451A03 !important; color:#FCD34D !important; }
@@ -346,12 +371,12 @@ export function renderEmail(frame: EmailFrame): string {
   [data-ogsc] .t-ink, [data-ogsc] .title, [data-ogsc] .tile-value, [data-ogsc] .callout strong { color:#FAFAF9 !important; }
   [data-ogsc] .t-body { color:#D6D3D1 !important; }
   [data-ogsc] .t-muted, [data-ogsc] .footer-text { color:#A8A29E !important; }
-  [data-ogsc] .t-accent, [data-ogsc] .t-link { color:#A5B4FC !important; }
+  [data-ogsc] .t-accent, [data-ogsc] .t-link { color:#A9B0FB !important; }
   [data-ogsc] .t-positive { color:#5EEAD4 !important; }
   [data-ogsc] .t-negative { color:#FCA5A5 !important; }
   [data-ogsc] .b-line { border-color:#292524 !important; }
   [data-ogsc] .tile-inner, [data-ogsc] .callout { background:#1C1917 !important; border-color:#292524 !important; }
-  [data-ogsc] .pill-on { background:#272449 !important; color:#C7D2FE !important; }
+  [data-ogsc] .pill-on { background:#23264F !important; color:#C9CEFD !important; }
   [data-ogsc] .pill-off { background:#292524 !important; color:#A8A29E !important; }
   [data-ogsc] .pill-positive { background:#042F2E !important; color:#5EEAD4 !important; }
   [data-ogsc] .pill-warning { background:#451A03 !important; color:#FCD34D !important; }
@@ -366,18 +391,11 @@ export function renderEmail(frame: EmailFrame): string {
 
 <tr><td class="card" bgcolor="${BRAND.surface}" style="background:${BRAND.surface};border:1px solid ${BRAND.line};border-radius:14px;overflow:hidden;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-<tr><td height="4" bgcolor="${BRAND.indigo}" style="height:4px;background:${BRAND.indigo};border-radius:13px 13px 0 0;font-size:0;line-height:0;">&nbsp;</td></tr>
+${headerBand(frame.context)}
 
-<tr><td class="pad" style="padding:24px 36px 0;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-<td valign="middle">${brandMark()}</td>
-<td class="t-muted" align="right" valign="middle" style="font-family:${FONT};font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:${BRAND.faint};">${esc(frame.context)}</td>
-</tr></table>
-</td></tr>
-
-<tr><td class="pad" style="padding:28px 36px 8px;">
-<p class="t-accent" style="margin:0 0 8px;font-family:${FONT};font-size:12px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:${BRAND.indigo};">${esc(frame.eyebrow)}</p>
-<h1 class="title" style="margin:0 0 18px;font-family:${FONT};font-size:26px;font-weight:700;line-height:1.25;letter-spacing:-0.02em;color:${BRAND.ink};">${esc(frame.title)}</h1>
+<tr><td class="pad" style="padding:30px 36px 8px;">
+<p class="t-accent" style="margin:0 0 10px;font-family:${MONO};font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:${BRAND.iris};">${esc(frame.eyebrow)}</p>
+<h1 class="title" style="margin:0 0 18px;font-family:${SERIF};font-size:32px;font-weight:400;line-height:1.15;letter-spacing:-0.01em;color:${BRAND.ink};">${esc(frame.title)}</h1>
 </td></tr>
 
 <tr><td class="pad" style="padding:0 36px 36px;">${frame.bodyHtml}</td></tr>
@@ -386,7 +404,7 @@ export function renderEmail(frame: EmailFrame): string {
 
 <tr><td class="pad" style="padding:22px 36px 0;">
 <p class="footer-text" style="margin:0 0 6px;font-family:${FONT};font-size:12px;line-height:1.6;color:${BRAND.footer};">${esc(frame.reason)}</p>
-<p class="footer-text" style="margin:0;font-family:${FONT};font-size:12px;line-height:1.6;color:${BRAND.footerFaint};">Dialo AI${frame.workspace ? ` &middot; ${esc(frame.workspace)}` : ""} &middot; &copy; ${year}</p>
+<p class="footer-text" style="margin:0;font-family:${FONT};font-size:12px;line-height:1.6;color:${BRAND.footerFaint};">Tringlo AI${frame.workspace ? ` &middot; ${esc(frame.workspace)}` : ""} &middot; &copy; ${year}</p>
 </td></tr>
 
 </table>

@@ -1,5 +1,5 @@
 // ============================================================
-// Dialo AI — One-Time Codes
+// Tringlo AI — One-Time Codes
 // ============================================================
 //
 // Six-digit codes for password reset. A million possibilities is only safe

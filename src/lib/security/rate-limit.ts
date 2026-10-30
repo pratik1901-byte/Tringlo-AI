@@ -1,5 +1,5 @@
 // ============================================================
-// Dialo AI — Rate Limiting
+// Tringlo AI — Rate Limiting
 // ============================================================
 // A fixed-window counter held in process memory.
 //

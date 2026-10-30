@@ -1,5 +1,5 @@
 // ============================================================
-// Dialo AI — Reconciling a Call Against the Provider
+// Tringlo AI — Reconciling a Call Against the Provider
 // ============================================================
 //
 // Settles a call from Sarvam's own attempt record when the webhook has not
@@ -18,6 +18,7 @@
 // never touches a call the webhook has already settled.
 // ============================================================
 
+import { resolveCallAgent } from "@/lib/providers/config";
 import { syncLeadStatus } from "@/lib/calls/lead-status";
 import { getCallRecord, updateCallRecord } from "@/lib/db";
 import { getProviderAttemptStatus, isAttemptPollingConfigured } from "@/lib/providers/sarvam/attempts";
@@ -66,7 +67,11 @@ export async function reconcileCallWithProvider(callId: string): Promise<Reconci
     return { changed: false, detail: "Call has no provider attempt id." };
   }
 
+  const agent = resolveCallAgent(record);
+  if (!agent) return { changed: false, detail: "This workspace has no voice provider configured." };
+
   const provider = await getProviderAttemptStatus(
+    agent,
     record.providerAttemptId,
     record.requestedAt ?? record.startedAt
   );
@@ -96,7 +101,9 @@ export async function reconcileCallWithProvider(callId: string): Promise<Reconci
   syncLeadStatus(record.leadId);
 
   if (connected && provider.interactionId) {
-    prefetchRecordingLater(provider.interactionId);
+    // Fetched from the agent this call ran on, which may not be the one the
+    // workspace uses today.
+    prefetchRecordingLater(provider.interactionId, agent);
   }
 
   console.log(

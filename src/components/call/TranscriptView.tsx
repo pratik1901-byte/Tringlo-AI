@@ -1,7 +1,7 @@
 "use client";
 
 // ============================================================
-// Dialo AI — Transcript
+// Tringlo AI — Transcript
 // ============================================================
 // Renders the turns Sarvam delivered in `interaction_transcript`, and nothing
 // else. When there are no turns it says why, in terms of the call's actual

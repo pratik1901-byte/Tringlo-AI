@@ -1,7 +1,7 @@
 // ============================================================
-// Dialo AI — Webhook Reachability
+// Tringlo AI — Webhook Reachability
 // ============================================================
-// Confirms that a call result can actually get back to Dialo before a call is
+// Confirms that a call result can actually get back to Tringlo before a call is
 // placed.
 //
 // Sarvam delivers the outcome to APP_URL once. If that URL is a dead tunnel or
@@ -58,11 +58,11 @@ export async function checkWebhookReachable(webhookBaseUrl: string): Promise<Rea
       // deployment that happens to return 200 for anything.
       result =
         body?.service === "dialo-sarvam-webhook"
-          ? { reachable: true, url, detail: "Call results can reach Dialo." }
+          ? { reachable: true, url, detail: "Call results can reach Tringlo." }
           : {
               reachable: false,
               url,
-              detail: "The webhook URL is serving something other than this Dialo instance.",
+              detail: "The webhook URL is serving something other than this Tringlo instance.",
             };
     }
   } catch (error: unknown) {

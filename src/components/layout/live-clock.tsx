@@ -1,7 +1,7 @@
 "use client";
 
 // ============================================================
-// Dialo AI — Live Clock
+// Tringlo AI — Live Clock
 // ============================================================
 //
 // The current time, beside the theme toggle.
@@ -16,7 +16,7 @@
 //     wrong by the time it reaches the browser, and would mismatch on hydration.
 //
 // This shows the browser's own local time, labelled with its zone, rather than
-// the calling window's zone. Dialo dials in the window's timezone, so if an
+// the calling window's zone. Tringlo dials in the window's timezone, so if an
 // admin is elsewhere the two genuinely differ — better to state which one this
 // is than to imply they are the same.
 // ============================================================

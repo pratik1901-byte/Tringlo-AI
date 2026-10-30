@@ -1,5 +1,5 @@
 // ============================================================
-// Dialo AI — Authoritative Server-Side Database
+// Tringlo AI — Authoritative Server-Side Database
 // ============================================================
 // Persists leads, call records, follow-ups, raw provider events and webhook
 // delivery receipts to data/database.json, so call data survives server
@@ -12,6 +12,26 @@
 import fs from "fs";
 import path from "path";
 import type {
+  Appointment,
+  AppointmentEvent,
+  Doctor,
+  HospitalAuditEvent,
+  HospitalFaq,
+  HospitalProfile,
+  Reminder,
+} from "@/lib/hospital/types";
+import type {
+  CancellationRequest,
+  HospitalFollowUp,
+  HistoryReport,
+  MedicalHistoryRecord,
+  QuestionnaireSession,
+  UnansweredInquiry,
+  VisitNote,
+} from "@/lib/hospital/records";
+import type { DemoHisPatient } from "@/lib/hospital/his/types";
+import type { ProviderDirectory } from "@/lib/hospital/directory";
+import type {
   AgentConfig,
   CallingWindow,
   CallRecord,
@@ -20,8 +40,12 @@ import type {
   Session,
   Tenant,
   User,
+  WorkspaceMembership,
 } from "@/lib/types";
 import type { CustomerProfile, MemoryItem } from "@/lib/memory/types";
+import type { Campaign as CampaignRun } from "@/lib/campaigns/types";
+import type { InboundSettings } from "@/lib/inbound/types";
+import type { WorkspaceProviderConfig } from "@/lib/providers/types";
 
 /**
  * A pending password reset. Only a salted HMAC of the code is stored, so the
@@ -36,6 +60,24 @@ export interface PasswordReset {
   expiresAt: string;
   attempts: number;
   /** Set when used or superseded; a closed reset can never succeed. */
+  closedAt: string | null;
+}
+
+/**
+ * A pending change of login email. The code goes to the NEW address, so the
+ * change proves the person owns it. Kept apart from password resets so a code
+ * issued for one can never be spent on the other.
+ */
+export interface EmailChange {
+  id: string;
+  userId: string;
+  /** Lower-cased. Checked for uniqueness again when the code is confirmed. */
+  newEmail: string;
+  codeHash: string;
+  salt: string;
+  createdAt: string;
+  expiresAt: string;
+  attempts: number;
   closedAt: string | null;
 }
 
@@ -58,15 +100,23 @@ export interface RawEvent {
   attemptId?: string;
   status?: string;
   payload: unknown;
+  /**
+   * The workspace this delivery belongs to, when it could be established from
+   * a trusted provider identifier. Null means it could not be — a forged or
+   * stale event — and it is never guessed at.
+   */
+  tenantId?: string | null;
 }
 
-/** One row per webhook body Dialo has already applied — the idempotency ledger. */
+/** One row per webhook body Tringlo has already applied — the idempotency ledger. */
 export interface WebhookReceipt {
   attemptId: string;
   /** Hash of the meaningful payload fields; a repeat delivery hashes identically. */
   fingerprint: string;
   status: string;
   appliedAt: string;
+  /** The workspace the applied call belongs to; null when unestablished. */
+  tenantId?: string | null;
 }
 
 export interface DatabaseSchema {
@@ -96,7 +146,7 @@ export interface DatabaseSchema {
   /** Rolling record of webhook delivery health, for diagnostics. */
   webhookDelivery: WebhookDeliveryState | null;
   /**
-   * Businesses using Dialo. Every lead, call and follow-up belongs to one, and
+   * Businesses using Tringlo. Every lead, call and follow-up belongs to one, and
    * the API scopes each request to the caller's tenant.
    */
   tenants: Tenant[];
@@ -114,7 +164,7 @@ export interface DatabaseSchema {
    */
   legacyTenantId: string | null;
   /**
-   * What Dialo has learned about each customer, and who each customer is.
+   * What Tringlo has learned about each customer, and who each customer is.
    *
    * Kept apart from callRecords on purpose: a transcript is evidence of one
    * conversation, a memory is a durable claim that later calls can confirm or
@@ -123,7 +173,55 @@ export interface DatabaseSchema {
   customerProfiles: CustomerProfile[];
   memoryItems: MemoryItem[];
   passwordResets: PasswordReset[];
+  emailChanges: EmailChange[];
   notificationSettings: NotificationSettings[];
+  /** Sarvam campaigns, per workspace. */
+  campaignRuns: CampaignRun[];
+  /** Inbound calling, per workspace. Absent row = inbound off. */
+  inboundSettings: InboundSettings[];
+
+  /** Which Sarvam agent, connection and numbers each workspace uses. */
+  providerConfigs: WorkspaceProviderConfig[];
+  /**
+   * Who may open which workspace. Added when one account became able to own
+   * several workspaces; absent databases gain it empty and are filled by
+   * migrateMemberships().
+   */
+  memberships: WorkspaceMembership[];
+
+  /**
+   * A workspace's company information and calling hours.
+   *
+   * `agentConfig` and `callingWindow` above are the single-workspace
+   * originals. They are migrated into this collection on first read and are
+   * no longer read after that; they stay on disk so a rollback needs no
+   * data restore.
+   */
+  workspaceProfiles: WorkspaceProfile[];
+
+  /**
+   * Hospital operations, for workspaces running the hospital panel. Scoped by
+   * tenantId like everything else, and absent in a database written before
+   * the panel existed — an empty list is the right reading of "no hospital".
+   */
+  doctors: Doctor[];
+  appointments: Appointment[];
+  appointmentEvents: AppointmentEvent[];
+  reminders: Reminder[];
+  hospitalFaqs: HospitalFaq[];
+  hospitalProfiles: HospitalProfile[];
+  hospitalAudit: HospitalAuditEvent[];
+  questionnaireSessions: QuestionnaireSession[];
+  medicalHistories: MedicalHistoryRecord[];
+  historyReports: HistoryReport[];
+  visitNotes: VisitNote[];
+  hospitalFollowUps: HospitalFollowUp[];
+  unansweredInquiries: UnansweredInquiry[];
+  cancellationRequests: CancellationRequest[];
+  /** The demonstration hospital server's own patient directory. */
+  hisPatients: DemoHisPatient[];
+  /** The last provider directory read from the hospital server, per workspace. */
+  providerDirectories: ProviderDirectory[];
 }
 
 /**
@@ -169,7 +267,29 @@ function emptyDb(): DatabaseSchema {
     customerProfiles: [],
     memoryItems: [],
     passwordResets: [],
+    emailChanges: [],
     notificationSettings: [],
+    campaignRuns: [],
+    inboundSettings: [],
+    providerConfigs: [],
+    memberships: [],
+    doctors: [],
+    appointments: [],
+    appointmentEvents: [],
+    reminders: [],
+    hospitalFaqs: [],
+    hospitalProfiles: [],
+    hospitalAudit: [],
+    questionnaireSessions: [],
+    medicalHistories: [],
+    historyReports: [],
+    visitNotes: [],
+    hospitalFollowUps: [],
+    unansweredInquiries: [],
+    cancellationRequests: [],
+    hisPatients: [],
+    providerDirectories: [],
+    workspaceProfiles: [],
   };
 }
 
@@ -183,8 +303,30 @@ function ensureDataDir() {
   }
 }
 
+/**
+ * The cache outlives this module: a dev server's hot reload re-runs this file
+ * but keeps `globalThis`, so the cached database can predate collections
+ * added since (as happened with campaigns). The first read in each module
+ * instance fills in anything missing, with the same defaults a fresh database
+ * gets.
+ */
+let cacheChecked = false;
+
+function withAllCollections(db: DatabaseSchema): DatabaseSchema {
+  const defaults = emptyDb() as unknown as Record<string, unknown>;
+  const target = db as unknown as Record<string, unknown>;
+  for (const [key, value] of Object.entries(defaults)) {
+    if (target[key] === undefined) target[key] = value;
+  }
+  return db;
+}
+
 function readDb(): DatabaseSchema {
   if (globalThis.__dialoDatabaseCache) {
+    if (!cacheChecked) {
+      withAllCollections(globalThis.__dialoDatabaseCache);
+      cacheChecked = true;
+    }
     return globalThis.__dialoDatabaseCache;
   }
 
@@ -212,9 +354,31 @@ function readDb(): DatabaseSchema {
         customerProfiles: Array.isArray(parsed.customerProfiles) ? parsed.customerProfiles : [],
         memoryItems: Array.isArray(parsed.memoryItems) ? parsed.memoryItems : [],
         passwordResets: Array.isArray(parsed.passwordResets) ? parsed.passwordResets : [],
+        emailChanges: Array.isArray(parsed.emailChanges) ? parsed.emailChanges : [],
+        campaignRuns: Array.isArray(parsed.campaignRuns) ? parsed.campaignRuns : [],
+        inboundSettings: Array.isArray(parsed.inboundSettings) ? parsed.inboundSettings : [],
         notificationSettings: Array.isArray(parsed.notificationSettings)
           ? parsed.notificationSettings
           : [],
+        providerConfigs: Array.isArray(parsed.providerConfigs) ? parsed.providerConfigs : [],
+        workspaceProfiles: Array.isArray(parsed.workspaceProfiles) ? parsed.workspaceProfiles : [],
+        memberships: Array.isArray(parsed.memberships) ? parsed.memberships : [],
+        doctors: Array.isArray(parsed.doctors) ? parsed.doctors : [],
+        appointments: Array.isArray(parsed.appointments) ? parsed.appointments : [],
+        appointmentEvents: Array.isArray(parsed.appointmentEvents) ? parsed.appointmentEvents : [],
+        reminders: Array.isArray(parsed.reminders) ? parsed.reminders : [],
+        hospitalFaqs: Array.isArray(parsed.hospitalFaqs) ? parsed.hospitalFaqs : [],
+        hospitalProfiles: Array.isArray(parsed.hospitalProfiles) ? parsed.hospitalProfiles : [],
+        hospitalAudit: Array.isArray(parsed.hospitalAudit) ? parsed.hospitalAudit : [],
+        questionnaireSessions: Array.isArray(parsed.questionnaireSessions) ? parsed.questionnaireSessions : [],
+        medicalHistories: Array.isArray(parsed.medicalHistories) ? parsed.medicalHistories : [],
+        historyReports: Array.isArray(parsed.historyReports) ? parsed.historyReports : [],
+        visitNotes: Array.isArray(parsed.visitNotes) ? parsed.visitNotes : [],
+        hospitalFollowUps: Array.isArray(parsed.hospitalFollowUps) ? parsed.hospitalFollowUps : [],
+        unansweredInquiries: Array.isArray(parsed.unansweredInquiries) ? parsed.unansweredInquiries : [],
+        cancellationRequests: Array.isArray(parsed.cancellationRequests) ? parsed.cancellationRequests : [],
+        hisPatients: Array.isArray(parsed.hisPatients) ? parsed.hisPatients : [],
+        providerDirectories: Array.isArray(parsed.providerDirectories) ? parsed.providerDirectories : [],
       };
       return globalThis.__dialoDatabaseCache;
     } catch (err) {
@@ -229,7 +393,7 @@ function readDb(): DatabaseSchema {
 
 /**
  * Writes through a temp file so a crash mid-write cannot leave a truncated
- * database behind — the in-flight call state is the only copy Dialo has.
+ * database behind — the in-flight call state is the only copy Tringlo has.
  */
 function writeDb(data: DatabaseSchema) {
   globalThis.__dialoDatabaseCache = data;
@@ -282,13 +446,90 @@ export function updateLead(id: string, updates: Partial<Lead>): Lead | undefined
   return lead;
 }
 
+/**
+ * Deletes a lead and everything that exists because of it: its calls (with
+ * transcripts and saved recordings), follow-ups, raw webhook events and
+ * receipts, its place in campaign lead lists, and its customer memory — unless
+ * another lead in the same workspace shares that customer.
+ *
+ * A delete that left the calls behind was not a delete: the person's
+ * transcripts and outcomes stayed on screen in Results and Campaigns.
+ */
 export function deleteLead(id: string): boolean {
   const db = readDb();
-  const before = db.leads.length;
-  db.leads = db.leads.filter((lead) => lead.id !== id);
-  if (db.leads.length === before) return false;
+  const lead = db.leads.find((candidate) => candidate.id === id);
+  if (!lead) return false;
+  db.leads = db.leads.filter((candidate) => candidate.id !== id);
+  purgeLeadData(db, new Set([id]));
   writeDb(db);
+  console.log(`LEAD_DELETED lead=${id}`);
   return true;
+}
+
+/** Removes everything tied to the given lead ids. Mutates `db`; the caller writes. */
+function purgeLeadData(db: DatabaseSchema, leadIds: Set<string>) {
+  const calls = db.callRecords.filter((record) => leadIds.has(record.leadId));
+  const attempts = new Set(calls.map((record) => record.providerAttemptId).filter(Boolean) as string[]);
+
+  db.callRecords = db.callRecords.filter((record) => !leadIds.has(record.leadId));
+  db.followUps = db.followUps.filter((followUp) => !leadIds.has(followUp.leadId));
+  db.rawEvents = db.rawEvents.filter((event) => !(event.attemptId && attempts.has(event.attemptId)));
+  db.webhookReceipts = db.webhookReceipts.filter((receipt) => !attempts.has(receipt.attemptId));
+  for (const campaign of db.campaignRuns) {
+    if (campaign.members.some((member) => leadIds.has(member.leadId))) {
+      campaign.members = campaign.members.filter((member) => !leadIds.has(member.leadId));
+    }
+  }
+
+  // Customer memory: unlinked from these leads, and erased once no lead is left.
+  const remaining = new Set(db.leads.map((candidate) => candidate.id));
+  const goneProfiles = new Set<string>();
+  for (const profile of db.customerProfiles) {
+    if (!profile.leadIds.some((leadId) => leadIds.has(leadId))) continue;
+    profile.leadIds = profile.leadIds.filter((leadId) => !leadIds.has(leadId));
+    if (!profile.leadIds.some((leadId) => remaining.has(leadId))) goneProfiles.add(`${profile.tenantId}|${profile.id}`);
+  }
+  db.customerProfiles = db.customerProfiles.filter((profile) => !goneProfiles.has(`${profile.tenantId}|${profile.id}`));
+  db.memoryItems = db.memoryItems.filter((item) => !goneProfiles.has(`${item.tenantId}|${item.customerId}`));
+
+  // Saved audio for those calls.
+  for (const record of calls) {
+    const interaction = record.providerInteractionId;
+    if (!interaction) continue;
+    const safe = interaction.replace(/[^A-Za-z0-9-]/g, "_");
+    for (const extension of ["wav", "mp3"]) {
+      const file = path.join(DATA_DIR, "recordings", `${safe}.${extension}`);
+      try {
+        if (file.startsWith(path.join(DATA_DIR, "recordings") + path.sep) && fs.existsSync(file)) fs.unlinkSync(file);
+      } catch (error) {
+        console.error("LEAD_RECORDING_DELETE_FAILED", error instanceof Error ? error.message : error);
+      }
+    }
+  }
+}
+
+/**
+ * Removes data still attached to leads that no longer exist — left behind by
+ * deletes made before deleteLead cleaned up after itself. Idempotent.
+ */
+export function purgeOrphanedLeadData(): { calls: number; followUps: number; campaignEntries: number } {
+  const db = readDb();
+  const existing = new Set(db.leads.map((lead) => lead.id));
+  const orphanIds = new Set<string>([
+    ...db.callRecords.map((record) => record.leadId),
+    ...db.followUps.map((followUp) => followUp.leadId),
+    ...db.campaignRuns.flatMap((campaign) => campaign.members.map((member) => member.leadId)),
+  ].filter((leadId) => !existing.has(leadId)));
+  if (orphanIds.size === 0) return { calls: 0, followUps: 0, campaignEntries: 0 };
+
+  const counts = {
+    calls: db.callRecords.filter((record) => orphanIds.has(record.leadId)).length,
+    followUps: db.followUps.filter((followUp) => orphanIds.has(followUp.leadId)).length,
+    campaignEntries: db.campaignRuns.reduce((n, campaign) => n + campaign.members.filter((member) => orphanIds.has(member.leadId)).length, 0),
+  };
+  purgeLeadData(db, orphanIds);
+  writeDb(db);
+  return counts;
 }
 
 /**
@@ -346,7 +587,7 @@ export function getCallRecord(id: string): CallRecord | undefined {
   return readDb().callRecords.find((record) => record.id === id);
 }
 
-/** The attempt_id is the correlation key between a Dialo call and its webhook. */
+/** The attempt_id is the correlation key between a Tringlo call and its webhook. */
 export function getCallRecordByAttemptId(attemptId: string): CallRecord | undefined {
   return readDb().callRecords.find((record) => record.providerAttemptId === attemptId);
 }
@@ -550,10 +791,12 @@ export function hasProcessedWebhook(attemptId: string, fingerprint: string): boo
 export function recordWebhookReceipt(
   attemptId: string,
   fingerprint: string,
-  status: string
+  status: string,
+  tenantId?: string | null
 ): void {
   const db = readDb();
   db.webhookReceipts.unshift({
+    tenantId: tenantId ?? null,
     attemptId,
     fingerprint,
     status,
@@ -574,7 +817,8 @@ const SECRET_KEYS = ["apiKey", "api_key", "SARVAM_API_KEY", "authorization", "x-
 export function saveRawEvent(
   payload: Record<string, unknown>,
   attemptId?: string,
-  status?: string
+  status?: string,
+  tenantId?: string | null
 ): void {
   const db = readDb();
 
@@ -591,6 +835,7 @@ export function saveRawEvent(
     attemptId,
     status,
     payload: sanitised,
+    tenantId: tenantId ?? null,
   });
 
   if (db.rawEvents.length > MAX_RAW_EVENTS) {
@@ -600,7 +845,21 @@ export function saveRawEvent(
   writeDb(db);
 }
 
-export function getRawEvents(limit = 25): RawEvent[] {
+/**
+ * Webhook deliveries, for one workspace.
+ *
+ * A row whose workspace could not be established belongs to nobody and is
+ * returned to nobody; it stays on disk for the operator to inspect on the
+ * server.
+ */
+export function getRawEvents(tenantId: string, limit = 25): RawEvent[] {
+  return readDb()
+    .rawEvents.filter((event) => event.tenantId === tenantId)
+    .slice(0, limit);
+}
+
+/** Every delivery, workspace or not. Server-side diagnostics only. */
+export function getAllRawEvents(limit = 25): RawEvent[] {
   return readDb().rawEvents.slice(0, limit);
 }
 
@@ -608,15 +867,37 @@ export function getRawEvents(limit = 25): RawEvent[] {
 // AGENT CONFIGURATION
 // ------------------------------------------------------------
 
-export function getAgentConfig(): Partial<AgentConfig> | null {
+/** The pre-tenancy company profile. Read by the migration, by nothing else. */
+export function getAgentConfigSingleton(): Partial<AgentConfig> | null {
   return readDb().agentConfig;
 }
 
-export function saveAgentConfig(config: Partial<AgentConfig>): Partial<AgentConfig> {
-  const db = readDb();
-  db.agentConfig = { ...(db.agentConfig ?? {}), ...config };
-  writeDb(db);
-  return db.agentConfig;
+/** The pre-tenancy calling window. Read by the migration, by nothing else. */
+export function getCallingWindowSingleton(): CallingWindow | null {
+  return readDb().callingWindow;
+}
+
+/**
+ * One workspace's company information — the name the agent introduces itself
+ * with, the product it describes, the FAQs it answers from.
+ *
+ * Returns an empty object for a workspace that has not set one up, never
+ * another workspace's.
+ */
+export function getAgentConfig(tenantId: string): Partial<AgentConfig> {
+  return getWorkspaceProfile(tenantId)?.agentConfig ?? {};
+}
+
+export function saveAgentConfig(tenantId: string, config: Partial<AgentConfig>): Partial<AgentConfig> {
+  const existing = getWorkspaceProfile(tenantId);
+  const merged = { ...(existing?.agentConfig ?? {}), ...config };
+  saveWorkspaceProfile({
+    tenantId,
+    agentConfig: merged,
+    callingWindow: existing?.callingWindow ?? null,
+    updatedAt: new Date().toISOString(),
+  });
+  return merged;
 }
 
 const DEFAULT_CALLING_WINDOW: CallingWindow = {
@@ -625,15 +906,28 @@ const DEFAULT_CALLING_WINDOW: CallingWindow = {
   timezone: "Asia/Kolkata",
 };
 
-export function getCallingWindow(): CallingWindow {
-  return readDb().callingWindow ?? DEFAULT_CALLING_WINDOW;
+/** One workspace's calling hours. The default is used until it sets its own. */
+export function getCallingWindow(tenantId: string): CallingWindow {
+  return getWorkspaceProfile(tenantId)?.callingWindow ?? DEFAULT_CALLING_WINDOW;
 }
 
-export function saveCallingWindow(window: CallingWindow): CallingWindow {
-  const db = readDb();
-  db.callingWindow = window;
-  writeDb(db);
+export function saveCallingWindow(tenantId: string, window: CallingWindow): CallingWindow {
+  const existing = getWorkspaceProfile(tenantId);
+  saveWorkspaceProfile({
+    tenantId,
+    agentConfig: existing?.agentConfig ?? {},
+    callingWindow: window,
+    updatedAt: new Date().toISOString(),
+  });
   return window;
+}
+
+/**
+ * The timezone to format a message in when no workspace is in hand — a public
+ * contact form, for instance. Never used for calling decisions.
+ */
+export function platformTimezone(): string {
+  return DEFAULT_CALLING_WINDOW.timezone;
 }
 
 // ------------------------------------------------------------
@@ -900,6 +1194,20 @@ export function deleteSessionsForUser(userId: string): number {
   return removed;
 }
 
+/**
+ * Signs a user out everywhere except the session making the request — what a
+ * password change should do: anyone else holding the old password is cut off,
+ * while the person who just changed it stays signed in.
+ */
+export function deleteOtherSessions(userId: string, keepSessionId: string): number {
+  const db = readDb();
+  const before = db.sessions.length;
+  db.sessions = db.sessions.filter((s) => s.userId !== userId || s.id === keepSessionId);
+  const removed = before - db.sessions.length;
+  if (removed > 0) writeDb(db);
+  return removed;
+}
+
 /** The tenant that owns pre-tenancy rows; null until the first account exists. */
 export function getLegacyTenantId(): string | null {
   return readDb().legacyTenantId;
@@ -956,6 +1264,43 @@ export function saveCustomerProfile(profile: CustomerProfile): CustomerProfile {
   else db.customerProfiles.push(profile);
   writeDb(db);
   return profile;
+}
+
+/** Every customer profile in one business. */
+export function getCustomerProfiles(tenantId: string): CustomerProfile[] {
+  return readDb().customerProfiles.filter((profile) => profile.tenantId === tenantId);
+}
+
+/**
+ * Suppresses one memory: "that's wrong" or "don't bring that up".
+ *
+ * The row stays, marked forgotten, so the same call cannot quietly teach it
+ * back; `hard` erases it instead. Returns false when the item is not this
+ * customer's in this business.
+ */
+export function forgetMemoryItem(
+  tenantId: string,
+  customerId: string,
+  itemId: string,
+  options: { hard: boolean } = { hard: false }
+): boolean {
+  const db = readDb();
+  const index = db.memoryItems.findIndex(
+    (item) => item.id === itemId && item.tenantId === tenantId && item.customerId === customerId
+  );
+  if (index < 0) return false;
+
+  if (options.hard) {
+    db.memoryItems.splice(index, 1);
+  } else {
+    db.memoryItems[index] = {
+      ...db.memoryItems[index],
+      status: "forgotten",
+      updatedAt: new Date().toISOString(),
+    };
+  }
+  writeDb(db);
+  return true;
 }
 
 /** Every memory for one customer, including corrected and forgotten items. */
@@ -1063,6 +1408,330 @@ export function updatePasswordReset(id: string, updates: Partial<PasswordReset>)
 }
 
 // ------------------------------------------------------------
+// CAMPAIGNS (Sarvam)
+// ------------------------------------------------------------
+//
+// Tenant-scoped like memory: every accessor takes the tenant and filters on it.
+
+export function getCampaignRuns(tenantId: string): CampaignRun[] {
+  return readDb()
+    .campaignRuns.filter((campaign) => campaign.tenantId === tenantId)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export function getCampaignRun(tenantId: string, id: string): CampaignRun | undefined {
+  return readDb().campaignRuns.find((campaign) => campaign.id === id && campaign.tenantId === tenantId);
+}
+
+/**
+ * Removes values that are a predicate says are junk from everything derived
+ * from calls: call-record text fields, rolling call summaries, and memory
+ * items (deleted outright — they were never something a customer said).
+ * One write. Returns what changed, for the log.
+ */
+export function scrubDerivedText(isJunk: (value: unknown) => boolean): { calls: number; summaries: number; memories: number } {
+  const db = readDb();
+  const fields = [
+    "aiSummary", "objection", "customerRequirement", "painPoints", "budgetIndication",
+    "timelineToDecide", "authorityLevel", "competitorMentioned", "chosenNextStep", "nextAction",
+  ] as const;
+  let calls = 0;
+  let summaries = 0;
+  for (const record of db.callRecords) {
+    let touched = false;
+    for (const field of fields) {
+      if (isJunk(record[field])) {
+        (record as unknown as Record<string, unknown>)[field] = null;
+        touched = true;
+      }
+    }
+    if (touched) calls++;
+  }
+  for (const profile of db.customerProfiles) {
+    for (const entry of profile.recentSummaries) {
+      for (const field of ["summary", "objection", "nextStep", "interest"] as const) {
+        if (isJunk(entry[field])) {
+          entry[field] = null;
+          summaries++;
+        }
+      }
+    }
+  }
+  const before = db.memoryItems.length;
+  db.memoryItems = db.memoryItems.filter((item) => !isJunk(item.value) && !isJunk(item.phrase));
+  const memories = before - db.memoryItems.length;
+  if (calls || summaries || memories) writeDb(db);
+  return { calls, summaries, memories };
+}
+
+// ------------------------------------------------------------
+// INBOUND SETTINGS
+// ------------------------------------------------------------
+
+export function getInboundSettings(tenantId: string): InboundSettings | undefined {
+  return readDb().inboundSettings.find((settings) => settings.tenantId === tenantId);
+}
+
+/** For the background tasks and the webhook, which work across workspaces. */
+export function getAllInboundSettings(): InboundSettings[] {
+  return readDb().inboundSettings;
+}
+
+/** The workspace an inbound call belongs to, from the deployment that answered it. */
+// ------------------------------------------------------------
+// Voice provider configuration, per workspace
+// ------------------------------------------------------------
+
+export interface WorkspaceProfile {
+  tenantId: string;
+  agentConfig: Partial<AgentConfig>;
+  callingWindow: CallingWindow | null;
+  updatedAt: string;
+}
+
+export function getProviderConfig(tenantId: string): WorkspaceProviderConfig | undefined {
+  return readDb().providerConfigs.find((config) => config.tenantId === tenantId);
+}
+
+export function getAllProviderConfigs(): WorkspaceProviderConfig[] {
+  return readDb().providerConfigs;
+}
+
+export function saveProviderConfig(config: WorkspaceProviderConfig): WorkspaceProviderConfig {
+  const db = readDb();
+  const index = db.providerConfigs.findIndex((existing) => existing.tenantId === config.tenantId);
+  if (index >= 0) db.providerConfigs[index] = config;
+  else db.providerConfigs.push(config);
+  writeDb(db);
+  return config;
+}
+
+/** The workspace a webhook token belongs to, or undefined when it matches none. */
+
+/** Opens a workspace on a session. The caller must already have checked the membership. */
+export function setSessionTenant(sessionId: string, tenantId: string): void {
+  const db = readDb();
+  const session = db.sessions.find((entry) => entry.id === sessionId);
+  if (!session) return;
+  session.tenantId = tenantId;
+  writeDb(db);
+}
+
+// ------------------------------------------------------------
+// Workspace membership — who may open which workspace
+// ------------------------------------------------------------
+
+/** Every membership row, including revoked ones. */
+export function getMemberships(): WorkspaceMembership[] {
+  return readDb().memberships;
+}
+
+/** The workspaces this account may open, newest grant last. */
+export function membershipsForUser(userId: string): WorkspaceMembership[] {
+  return readDb().memberships.filter((m) => m.userId === userId && m.status === "active");
+}
+
+/** The people who may open this workspace. */
+export function membershipsForTenant(tenantId: string): WorkspaceMembership[] {
+  return readDb().memberships.filter((m) => m.tenantId === tenantId && m.status === "active");
+}
+
+/**
+ * This account's active membership in one workspace, or undefined.
+ *
+ * This is the authorisation check: a workspace id from a client means nothing
+ * until it comes back from here.
+ */
+export function findMembership(userId: string, tenantId: string): WorkspaceMembership | undefined {
+  return readDb().memberships.find(
+    (m) => m.userId === userId && m.tenantId === tenantId && m.status === "active"
+  );
+}
+
+/**
+ * Grants access, or returns the grant that already exists.
+ *
+ * One account has at most one membership per workspace: granting twice is the
+ * same grant, so repeating it is harmless and changes nothing.
+ */
+export function grantMembership(input: {
+  userId: string;
+  tenantId: string;
+  role?: WorkspaceMembership["role"];
+  createdBy?: string | null;
+}): WorkspaceMembership {
+  const db = readDb();
+  const existing = db.memberships.find((m) => m.userId === input.userId && m.tenantId === input.tenantId);
+  if (existing) {
+    if (existing.status !== "active") {
+      existing.status = "active";
+      writeDb(db);
+    }
+    return existing;
+  }
+
+  const membership: WorkspaceMembership = {
+    id: `wm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    userId: input.userId,
+    tenantId: input.tenantId,
+    role: input.role ?? "owner",
+    status: "active",
+    createdAt: new Date().toISOString(),
+    createdBy: input.createdBy ?? null,
+    lastAccessedAt: null,
+  };
+  db.memberships.push(membership);
+  writeDb(db);
+  return membership;
+}
+
+/** Records that this workspace was opened, for the selector's ordering. */
+export function touchMembership(userId: string, tenantId: string): void {
+  const db = readDb();
+  const membership = db.memberships.find((m) => m.userId === userId && m.tenantId === tenantId);
+  if (!membership) return;
+  membership.lastAccessedAt = new Date().toISOString();
+  writeDb(db);
+}
+
+/**
+ * Gives every existing account a membership in the workspace it was created
+ * in, which is exactly the access it already had.
+ *
+ * Idempotent: running it twice grants nothing new. It never invents access —
+ * an account is only ever given the workspace on its own record, so nobody
+ * gains sight of a workspace they could not already see.
+ */
+export function migrateMemberships(): { granted: number; alreadyPresent: number; skipped: string[] } {
+  const db = readDb();
+  let granted = 0;
+  let alreadyPresent = 0;
+  const skipped: string[] = [];
+
+  for (const user of db.users) {
+    if (!user.tenantId) {
+      skipped.push(`${user.id} has no workspace on its record`);
+      continue;
+    }
+    if (!db.tenants.some((tenant) => tenant.id === user.tenantId)) {
+      skipped.push(`${user.id} points at missing workspace ${user.tenantId}`);
+      continue;
+    }
+    const existing = db.memberships.find((m) => m.userId === user.id && m.tenantId === user.tenantId);
+    if (existing) {
+      alreadyPresent++;
+      continue;
+    }
+    db.memberships.push({
+      id: `wm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      userId: user.id,
+      tenantId: user.tenantId,
+      role: user.role === "owner" ? "owner" : "member",
+      status: "active",
+      createdAt: user.createdAt ?? new Date().toISOString(),
+      createdBy: null,
+      lastAccessedAt: null,
+    });
+    granted++;
+  }
+
+  if (granted > 0) writeDb(db);
+  return { granted, alreadyPresent, skipped };
+}
+
+export function findTenantByWebhookToken(token: string): string | undefined {
+  if (!token) return undefined;
+  return readDb().providerConfigs.find((config) => config.webhookToken === token)?.tenantId;
+}
+
+// ------------------------------------------------------------
+// Company profile and calling hours, per workspace
+// ------------------------------------------------------------
+
+export function getWorkspaceProfile(tenantId: string): WorkspaceProfile | undefined {
+  return readDb().workspaceProfiles.find((profile) => profile.tenantId === tenantId);
+}
+
+export function saveWorkspaceProfile(profile: WorkspaceProfile): WorkspaceProfile {
+  const db = readDb();
+  const next = { ...profile, updatedAt: new Date().toISOString() };
+  const index = db.workspaceProfiles.findIndex((existing) => existing.tenantId === profile.tenantId);
+  if (index >= 0) db.workspaceProfiles[index] = next;
+  else db.workspaceProfiles.push(next);
+  writeDb(db);
+  return next;
+}
+
+export function findInboundSettingsByDeployment(deploymentId: string): InboundSettings | undefined {
+  return readDb().inboundSettings.find((settings) => settings.deploymentId === deploymentId);
+}
+
+export function saveInboundSettings(settings: InboundSettings): InboundSettings {
+  const db = readDb();
+  const next = { ...settings, updatedAt: new Date().toISOString() };
+  const index = db.inboundSettings.findIndex((existing) => existing.tenantId === settings.tenantId);
+  if (index >= 0) db.inboundSettings[index] = next;
+  else db.inboundSettings.push(next);
+  writeDb(db);
+  return next;
+}
+
+/** Every workspace's campaigns — for the background results sync only. */
+export function getAllCampaignRuns(): CampaignRun[] {
+  return readDb().campaignRuns;
+}
+
+/** For the webhook, which knows only Sarvam's id. */
+export function findCampaignRunByProviderId(providerCampaignId: string): CampaignRun | undefined {
+  return readDb().campaignRuns.find((campaign) => campaign.providerCampaignId === providerCampaignId);
+}
+
+export function saveCampaignRun(campaign: CampaignRun): CampaignRun {
+  const db = readDb();
+  const index = db.campaignRuns.findIndex(
+    (existing) => existing.id === campaign.id && existing.tenantId === campaign.tenantId
+  );
+  const next = { ...campaign, updatedAt: new Date().toISOString() };
+  if (index >= 0) db.campaignRuns[index] = next;
+  else db.campaignRuns.push(next);
+  writeDb(db);
+  return next;
+}
+
+// ------------------------------------------------------------
+// EMAIL CHANGES
+// ------------------------------------------------------------
+
+/** Opens an email change, closing earlier ones for the user: only the newest code works. */
+export function openEmailChange(change: EmailChange): void {
+  const db = readDb();
+  const now = new Date().toISOString();
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  for (const existing of db.emailChanges) {
+    if (existing.userId === change.userId && !existing.closedAt) existing.closedAt = now;
+  }
+  db.emailChanges = db.emailChanges.filter(
+    (existing) => new Date(existing.createdAt).getTime() > cutoff
+  );
+  db.emailChanges.push(change);
+  writeDb(db);
+}
+
+export function getOpenEmailChange(userId: string): EmailChange | undefined {
+  return readDb()
+    .emailChanges.filter((change) => change.userId === userId && !change.closedAt)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+}
+
+export function updateEmailChange(id: string, updates: Partial<EmailChange>): void {
+  const db = readDb();
+  const change = db.emailChanges.find((candidate) => candidate.id === id);
+  if (!change) return;
+  Object.assign(change, updates);
+  writeDb(db);
+}
+
+// ------------------------------------------------------------
 // NOTIFICATION SETTINGS
 // ------------------------------------------------------------
 
@@ -1106,4 +1775,554 @@ export function saveNotificationSettings(
 /** Every account in one workspace. */
 export function getUsersForTenant(tenantId: string): User[] {
   return readDb().users.filter((user) => user.tenantId === tenantId);
+}
+
+/**
+ * One-time backfill: stamps webhook deliveries with the workspace of the call
+ * they belong to. Rows that match no call are left unscoped on purpose.
+ */
+export function stampWebhookLogTenants(
+  tenantByAttemptId: Map<string, string>
+): { events: number; receipts: number; unmapped: number } {
+  const db = readDb();
+  let events = 0;
+  let receipts = 0;
+  let unmapped = 0;
+
+  for (const event of db.rawEvents) {
+    if (event.tenantId !== undefined && event.tenantId !== null) continue;
+    const tenantId = event.attemptId ? tenantByAttemptId.get(event.attemptId) : undefined;
+    if (tenantId) {
+      event.tenantId = tenantId;
+      events++;
+    } else {
+      event.tenantId = null;
+      unmapped++;
+    }
+  }
+
+  for (const receipt of db.webhookReceipts) {
+    if (receipt.tenantId !== undefined && receipt.tenantId !== null) continue;
+    const tenantId = tenantByAttemptId.get(receipt.attemptId);
+    if (tenantId) {
+      receipt.tenantId = tenantId;
+      receipts++;
+    } else {
+      receipt.tenantId = null;
+    }
+  }
+
+  if (events || receipts || unmapped) writeDb(db);
+  return { events, receipts, unmapped };
+}
+
+// ------------------------------------------------------------
+// Deleting a workspace
+// ------------------------------------------------------------
+
+export interface WorkspaceDeletionCounts {
+  leads: number;
+  callRecords: number;
+  followUps: number;
+  customers: number;
+  memoryItems: number;
+  campaigns: number;
+  webhookEvents: number;
+  users: number;
+  recordings: number;
+}
+
+/**
+ * Removes a workspace and everything that exists because of it.
+ *
+ * A workspace is a company's whole history, so a half-delete would be worse
+ * than none: its calls, customers and memory are removed with it, in one
+ * write, along with the accounts that could sign into it. Its inbound
+ * deployment at Sarvam is NOT touched — that lives in the provider and is the
+ * operator's to remove, and this function must never reach outside the
+ * database.
+ *
+ * Returns what was removed, or null when no such workspace exists.
+ */
+export function deleteTenant(tenantId: string): WorkspaceDeletionCounts | null {
+  const db = readDb();
+  if (!db.tenants.some((tenant) => tenant.id === tenantId)) return null;
+
+  const owned = <T extends { tenantId?: string | null }>(rows: T[]) =>
+    rows.filter((row) => row.tenantId === tenantId);
+
+  const leadIds = new Set(owned(db.leads).map((lead) => lead.id));
+  const counts: WorkspaceDeletionCounts = {
+    leads: leadIds.size,
+    callRecords: owned(db.callRecords).length,
+    followUps: owned(db.followUps).length,
+    customers: owned(db.customerProfiles).length,
+    memoryItems: owned(db.memoryItems).length,
+    campaigns: owned(db.campaignRuns).length,
+    webhookEvents: owned(db.rawEvents).length + owned(db.webhookReceipts).length,
+    users: owned(db.users).length,
+    recordings: 0,
+  };
+
+  // The recordings of this workspace's calls, before the records go.
+  for (const record of owned(db.callRecords)) {
+    if (!record.providerInteractionId) continue;
+    const safe = record.providerInteractionId.replace(/[^A-Za-z0-9-]/g, "_");
+    for (const extension of ["wav", "mp3"]) {
+      const dir = path.join(DATA_DIR, "recordings");
+      const file = path.join(dir, `${safe}.${extension}`);
+      try {
+        // Belt and braces: a crafted id must not reach outside the folder.
+        if (file.startsWith(dir + path.sep) && fs.existsSync(file)) {
+          fs.unlinkSync(file);
+          counts.recordings++;
+        }
+      } catch {
+        // A file that cannot be removed must not abandon the rest of the delete.
+      }
+    }
+  }
+
+  const keep = <T extends { tenantId?: string | null }>(rows: T[]) =>
+    rows.filter((row) => row.tenantId !== tenantId);
+
+  db.leads = keep(db.leads);
+  db.callRecords = keep(db.callRecords);
+  db.followUps = keep(db.followUps);
+  db.customerProfiles = keep(db.customerProfiles);
+  db.memoryItems = keep(db.memoryItems);
+  db.campaignRuns = keep(db.campaignRuns);
+  db.inboundSettings = keep(db.inboundSettings);
+  db.providerConfigs = keep(db.providerConfigs);
+  db.workspaceProfiles = keep(db.workspaceProfiles);
+  db.notificationSettings = keep(db.notificationSettings);
+  db.rawEvents = keep(db.rawEvents);
+  db.webhookReceipts = keep(db.webhookReceipts);
+
+  // Access to this workspace ends for everyone.
+  db.memberships = db.memberships.filter((membership) => membership.tenantId !== tenantId);
+
+  // An account is only removed when this was its last workspace. One person
+  // may own several, and deleting one of them must not delete the person.
+  const stillHasAWorkspace = (userId: string) =>
+    db.memberships.some((membership) => membership.userId === userId && membership.status === "active");
+  const removedUsers = db.users.filter((user) => user.tenantId === tenantId && !stillHasAWorkspace(user.id));
+  const userIds = new Set(removedUsers.map((user) => user.id));
+  db.users = db.users.filter((user) => !userIds.has(user.id));
+  counts.users = removedUsers.length;
+
+  // A session looking at this workspace is over; one belonging to a surviving
+  // account is sent back to whichever workspace it still has.
+  db.sessions = db.sessions.filter((session) => !userIds.has(session.userId));
+  for (const session of db.sessions) {
+    if (session.tenantId !== tenantId) continue;
+    const remaining = db.memberships.find((m) => m.userId === session.userId && m.status === "active");
+    session.tenantId = remaining?.tenantId ?? "";
+  }
+  db.passwordResets = db.passwordResets.filter((reset) => !userIds.has(reset.userId));
+  db.emailChanges = db.emailChanges.filter((change) => !userIds.has(change.userId));
+
+  db.tenants = db.tenants.filter((tenant) => tenant.id !== tenantId);
+  if (db.legacyTenantId === tenantId) db.legacyTenantId = null;
+
+  writeDb(db);
+  console.log(
+    `WORKSPACE_DELETED tenant=${tenantId} leads=${counts.leads} calls=${counts.callRecords} customers=${counts.customers} users=${counts.users}`
+  );
+  return counts;
+}
+
+// ------------------------------------------------------------
+// HOSPITAL OPERATIONS
+//
+// Every reader takes a tenantId and filters by it here, so a caller cannot
+// forget to scope and read another hospital's patients. Writers refuse a
+// record whose tenantId does not match the one asked for.
+// ------------------------------------------------------------
+
+function scoped<T extends { tenantId: string }>(rows: T[], tenantId: string): T[] {
+  return rows.filter((row) => row.tenantId === tenantId);
+}
+
+/** Upserts into a collection, keyed on id within one workspace. */
+function upsert<T extends { id: string; tenantId: string }>(rows: T[], record: T): T {
+  const index = rows.findIndex((row) => row.id === record.id && row.tenantId === record.tenantId);
+  if (index >= 0) rows[index] = record;
+  else rows.push(record);
+  return record;
+}
+
+export function getDoctors(tenantId: string): Doctor[] {
+  return scoped(readDb().doctors, tenantId);
+}
+
+export function getDoctor(tenantId: string, id: string): Doctor | undefined {
+  return readDb().doctors.find((doctor) => doctor.id === id && doctor.tenantId === tenantId);
+}
+
+export function saveDoctor(doctor: Doctor): Doctor {
+  const db = readDb();
+  const next = { ...doctor, updatedAt: new Date().toISOString() };
+  upsert(db.doctors, next);
+  writeDb(db);
+  return next;
+}
+
+export function deleteDoctor(tenantId: string, id: string): boolean {
+  const db = readDb();
+  const before = db.doctors.length;
+  db.doctors = db.doctors.filter((doctor) => !(doctor.id === id && doctor.tenantId === tenantId));
+  if (db.doctors.length === before) return false;
+  writeDb(db);
+  return true;
+}
+
+export function getAppointments(tenantId: string): Appointment[] {
+  return scoped(readDb().appointments, tenantId);
+}
+
+export function getAppointment(tenantId: string, id: string): Appointment | undefined {
+  return readDb().appointments.find((row) => row.id === id && row.tenantId === tenantId);
+}
+
+export function saveAppointment(appointment: Appointment): Appointment {
+  const db = readDb();
+  const next = { ...appointment, updatedAt: new Date().toISOString() };
+  upsert(db.appointments, next);
+  writeDb(db);
+  return next;
+}
+
+export function deleteAppointment(tenantId: string, id: string): boolean {
+  const db = readDb();
+  const before = db.appointments.length;
+  db.appointments = db.appointments.filter((row) => !(row.id === id && row.tenantId === tenantId));
+  if (db.appointments.length === before) return false;
+  // The appointment goes; what happened to it does not. Its events and the
+  // calls it produced stay, so a removal can still be accounted for.
+  writeDb(db);
+  return true;
+}
+
+export function getAppointmentEvents(tenantId: string, appointmentId?: string): AppointmentEvent[] {
+  const rows = scoped(readDb().appointmentEvents, tenantId);
+  return appointmentId ? rows.filter((row) => row.appointmentId === appointmentId) : rows;
+}
+
+export function recordAppointmentEvent(event: AppointmentEvent): AppointmentEvent {
+  const db = readDb();
+  db.appointmentEvents.push(event);
+  writeDb(db);
+  return event;
+}
+
+export function getReminders(tenantId: string): Reminder[] {
+  return scoped(readDb().reminders, tenantId);
+}
+
+export function getReminder(tenantId: string, id: string): Reminder | undefined {
+  return readDb().reminders.find((row) => row.id === id && row.tenantId === tenantId);
+}
+
+export function getReminderForAppointment(tenantId: string, appointmentId: string): Reminder | undefined {
+  return readDb().reminders.find(
+    (row) => row.tenantId === tenantId && row.appointmentId === appointmentId && row.status !== "cancelled"
+  );
+}
+
+/** The reminder a given call was placed for, if any. Scoped to the workspace. */
+export function getReminderByCallId(tenantId: string, callId: string): Reminder | undefined {
+  return readDb().reminders.find((row) => row.tenantId === tenantId && row.callId === callId);
+}
+
+/**
+ * The reminder for one appointment in a batch campaign, matched by the Sarvam
+ * campaign id and the appointment id (the cohort's user_identifier). Not
+ * tenant-scoped: a campaign webhook is how Tringlo first learns of the attempt,
+ * and the campaign id is Tringlo's own, so it identifies the workspace.
+ */
+export function findReminderByProviderCampaign(providerCampaignId: string, appointmentId: string): Reminder | undefined {
+  return readDb().reminders.find(
+    (row) => row.providerCampaignId === providerCampaignId && row.appointmentId === appointmentId
+  );
+}
+
+export function saveReminder(reminder: Reminder): Reminder {
+  const db = readDb();
+  const next = { ...reminder, updatedAt: new Date().toISOString() };
+  upsert(db.reminders, next);
+  writeDb(db);
+  return next;
+}
+
+/**
+ * Reminders ready to be placed, across every hospital.
+ *
+ * Used by the one server-side worker, which is why this is the only hospital
+ * reader that is not scoped to a tenant. A live lock means another pass holds
+ * it; a stale one is recoverable.
+ */
+export function getDueReminders(now: number, lockTimeoutMs: number): Reminder[] {
+  return readDb().reminders.filter((reminder) => {
+    if (reminder.status !== "scheduled" && reminder.status !== "due") return false;
+    if (reminder.lockedAt && now - new Date(reminder.lockedAt).getTime() < lockTimeoutMs) return false;
+    return new Date(reminder.dueAt).getTime() <= now;
+  });
+}
+
+export function getHospitalFaqs(tenantId: string): HospitalFaq[] {
+  return scoped(readDb().hospitalFaqs, tenantId);
+}
+
+export function saveHospitalFaq(faq: HospitalFaq): HospitalFaq {
+  const db = readDb();
+  const next = { ...faq, updatedAt: new Date().toISOString() };
+  upsert(db.hospitalFaqs, next);
+  writeDb(db);
+  return next;
+}
+
+/**
+ * Counts one use of a FAQ, without touching `updatedAt`.
+ *
+ * The answer's last-updated timestamp is what tells staff whether the wording
+ * is still current, so reading a FAQ out to a caller must not move it.
+ */
+export function recordFaqUse(tenantId: string, id: string): void {
+  const db = readDb();
+  const faq = db.hospitalFaqs.find((row) => row.id === id && row.tenantId === tenantId);
+  if (!faq) return;
+  faq.usedCount = (faq.usedCount ?? 0) + 1;
+  faq.lastUsedAt = new Date().toISOString();
+  writeDb(db);
+}
+
+export function deleteHospitalFaq(tenantId: string, id: string): boolean {
+  const db = readDb();
+  const before = db.hospitalFaqs.length;
+  db.hospitalFaqs = db.hospitalFaqs.filter((row) => !(row.id === id && row.tenantId === tenantId));
+  if (db.hospitalFaqs.length === before) return false;
+  writeDb(db);
+  return true;
+}
+
+export function getHospitalProfile(tenantId: string): HospitalProfile | undefined {
+  return readDb().hospitalProfiles.find((row) => row.tenantId === tenantId);
+}
+
+/** Every workspace running the hospital panel, for the server's own workers. */
+export function getHospitalProfiles(): HospitalProfile[] {
+  return readDb().hospitalProfiles;
+}
+
+export function saveHospitalProfile(profile: HospitalProfile): HospitalProfile {
+  const db = readDb();
+  const next = { ...profile, updatedAt: new Date().toISOString() };
+  const index = db.hospitalProfiles.findIndex((row) => row.tenantId === profile.tenantId);
+  if (index >= 0) db.hospitalProfiles[index] = next;
+  else db.hospitalProfiles.push(next);
+  writeDb(db);
+  return next;
+}
+
+export function getHospitalAudit(tenantId: string, limit = 200): HospitalAuditEvent[] {
+  return scoped(readDb().hospitalAudit, tenantId)
+    .slice()
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .slice(0, limit);
+}
+
+export function recordHospitalAudit(event: HospitalAuditEvent): HospitalAuditEvent {
+  const db = readDb();
+  db.hospitalAudit.push(event);
+  // Kept bounded like the other logs: the newest 2000 are what a hospital
+  // would ever look back through.
+  if (db.hospitalAudit.length > 2000) db.hospitalAudit = db.hospitalAudit.slice(-2000);
+  writeDb(db);
+  return event;
+}
+
+// ------------------------------------------------------------
+// Hospital intake records
+// ------------------------------------------------------------
+
+export function getQuestionnaireSessions(tenantId: string): QuestionnaireSession[] {
+  return scoped(readDb().questionnaireSessions, tenantId);
+}
+
+export function getQuestionnaireSession(tenantId: string, id: string): QuestionnaireSession | undefined {
+  return readDb().questionnaireSessions.find((row) => row.id === id && row.tenantId === tenantId);
+}
+
+/** The session a caller is part way through, if any. */
+export function getOpenQuestionnaireSession(tenantId: string, patientLeadId: string): QuestionnaireSession | undefined {
+  return readDb().questionnaireSessions.find(
+    (row) =>
+      row.tenantId === tenantId &&
+      row.patientLeadId === patientLeadId &&
+      (row.status === "consent_pending" || row.status === "in_progress")
+  );
+}
+
+export function saveQuestionnaireSession(session: QuestionnaireSession): QuestionnaireSession {
+  const db = readDb();
+  const next = { ...session, updatedAt: new Date().toISOString() };
+  upsert(db.questionnaireSessions, next);
+  writeDb(db);
+  return next;
+}
+
+export function getMedicalHistories(tenantId: string): MedicalHistoryRecord[] {
+  return scoped(readDb().medicalHistories, tenantId);
+}
+
+export function getMedicalHistory(tenantId: string, id: string): MedicalHistoryRecord | undefined {
+  return readDb().medicalHistories.find((row) => row.id === id && row.tenantId === tenantId);
+}
+
+/** The one history for a canonical patient id, by the key that makes it one. */
+export function getMedicalHistoryByPatient(tenantId: string, canonicalPatientId: string): MedicalHistoryRecord | undefined {
+  return readDb().medicalHistories.find(
+    (row) => row.tenantId === tenantId && row.canonicalPatientId === canonicalPatientId
+  );
+}
+
+/**
+ * Writes a history, refusing to make a second one for the same patient.
+ *
+ * This is the one-history-per-patient rule as a write barrier rather than a
+ * convention. Code above may have the check too, but a bug up there becomes a
+ * refused write down here instead of a duplicate record.
+ */
+export function saveMedicalHistory(record: MedicalHistoryRecord): MedicalHistoryRecord {
+  const db = readDb();
+  const clash = db.medicalHistories.find(
+    (row) =>
+      row.tenantId === record.tenantId &&
+      row.canonicalPatientId === record.canonicalPatientId &&
+      row.id !== record.id
+  );
+  if (clash) {
+    throw new Error(
+      `A medical history already exists for patient ${record.canonicalPatientId} in this workspace (${clash.id}). Update it rather than creating another.`
+    );
+  }
+  const next = { ...record, updatedAt: new Date().toISOString() };
+  upsert(db.medicalHistories, next);
+  writeDb(db);
+  return next;
+}
+
+export function getHistoryReports(tenantId: string): HistoryReport[] {
+  return scoped(readDb().historyReports, tenantId);
+}
+
+export function getHistoryReport(tenantId: string, id: string): HistoryReport | undefined {
+  return readDb().historyReports.find((row) => row.id === id && row.tenantId === tenantId);
+}
+
+export function saveHistoryReport(report: HistoryReport): HistoryReport {
+  const db = readDb();
+  const next = { ...report, updatedAt: new Date().toISOString() };
+  upsert(db.historyReports, next);
+  writeDb(db);
+  return next;
+}
+
+export function getVisitNotes(tenantId: string): VisitNote[] {
+  return scoped(readDb().visitNotes, tenantId);
+}
+
+export function saveVisitNote(note: VisitNote): VisitNote {
+  const db = readDb();
+  upsert(db.visitNotes, note);
+  writeDb(db);
+  return note;
+}
+
+export function getHospitalFollowUps(tenantId: string): HospitalFollowUp[] {
+  return scoped(readDb().hospitalFollowUps, tenantId);
+}
+
+export function getHospitalFollowUp(tenantId: string, id: string): HospitalFollowUp | undefined {
+  return readDb().hospitalFollowUps.find((row) => row.id === id && row.tenantId === tenantId);
+}
+
+export function saveHospitalFollowUp(followUp: HospitalFollowUp): HospitalFollowUp {
+  const db = readDb();
+  const next = { ...followUp, updatedAt: new Date().toISOString() };
+  upsert(db.hospitalFollowUps, next);
+  writeDb(db);
+  return next;
+}
+
+export function getUnansweredInquiries(tenantId: string): UnansweredInquiry[] {
+  return scoped(readDb().unansweredInquiries, tenantId);
+}
+
+export function getUnansweredInquiry(tenantId: string, id: string): UnansweredInquiry | undefined {
+  return readDb().unansweredInquiries.find((row) => row.id === id && row.tenantId === tenantId);
+}
+
+export function saveUnansweredInquiry(inquiry: UnansweredInquiry): UnansweredInquiry {
+  const db = readDb();
+  upsert(db.unansweredInquiries, inquiry);
+  writeDb(db);
+  return inquiry;
+}
+
+export function getCancellationRequests(tenantId: string): CancellationRequest[] {
+  return scoped(readDb().cancellationRequests, tenantId);
+}
+
+export function getCancellationRequest(tenantId: string, id: string): CancellationRequest | undefined {
+  return readDb().cancellationRequests.find((row) => row.id === id && row.tenantId === tenantId);
+}
+
+/** An outstanding request for an appointment, so one is not raised twice. */
+export function getOpenCancellationRequest(tenantId: string, appointmentId: string): CancellationRequest | undefined {
+  return readDb().cancellationRequests.find(
+    (row) =>
+      row.tenantId === tenantId &&
+      row.appointmentId === appointmentId &&
+      (row.status === "pending" || row.status === "submitted" || row.status === "failed")
+  );
+}
+
+export function saveCancellationRequest(request: CancellationRequest): CancellationRequest {
+  const db = readDb();
+  const next = { ...request, updatedAt: new Date().toISOString() };
+  upsert(db.cancellationRequests, next);
+  writeDb(db);
+  return next;
+}
+
+/**
+ * The demonstration hospital server's patient directory.
+ *
+ * Only the demo adapter reads this. A live hospital's patients are never
+ * copied in here — they stay in the hospital's own system.
+ */
+export function getHisPatients(tenantId: string): DemoHisPatient[] {
+  return scoped(readDb().hisPatients, tenantId);
+}
+
+export function readProviderDirectory(tenantId: string): ProviderDirectory | undefined {
+  return readDb().providerDirectories.find((row) => row.tenantId === tenantId);
+}
+
+export function writeProviderDirectory(directory: ProviderDirectory): ProviderDirectory {
+  const db = readDb();
+  const index = db.providerDirectories.findIndex((row) => row.tenantId === directory.tenantId);
+  if (index >= 0) db.providerDirectories[index] = directory;
+  else db.providerDirectories.push(directory);
+  writeDb(db);
+  return directory;
+}
+
+export function saveHisPatient(patient: DemoHisPatient): DemoHisPatient {
+  const db = readDb();
+  upsert(db.hisPatients, patient);
+  writeDb(db);
+  return patient;
 }

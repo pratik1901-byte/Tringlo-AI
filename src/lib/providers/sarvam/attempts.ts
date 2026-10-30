@@ -9,7 +9,7 @@
 // is over, and it is lost entirely if the public URL was unreachable at that
 // moment. Two failures follow from relying on it alone:
 //
-//   - Someone declines the call and Dialo still shows "waiting for provider"
+//   - Someone declines the call and Tringlo still shows "waiting for provider"
 //     long afterwards, because no webhook has arrived yet.
 //   - A call whose webhook was lost sits in `calling` for ever.
 //
@@ -22,6 +22,8 @@
 // conversation data still comes from the webhook.
 // ============================================================
 
+import { platformCredentials } from "@/lib/providers/config";
+import type { CallAgent } from "@/lib/recordings";
 import type { CallStatus } from "@/lib/types";
 
 const SARVAM_ANALYTICS = "https://apps.sarvam.ai/api/analytics/v1";
@@ -47,10 +49,6 @@ export interface ProviderAttemptStatus {
   endedAt: string | null;
   failureReason: string | null;
   endedBy: string | null;
-}
-
-function readEnv(name: string): string {
-  return (process.env[name] || "").trim().replace(/^["']|["']$/g, "");
 }
 
 const STATUS_MAP: Record<string, CallStatus> = {
@@ -91,27 +89,21 @@ function toIso(value: string | null | undefined): string | null {
 const CACHE_TTL_MS = 4000;
 let cache: { key: string; at: number; attempts: SarvamAttempt[] } | null = null;
 
+/** True when Tringlo can reach Sarvam's analytics at all. */
 export function isAttemptPollingConfigured(): boolean {
-  return Boolean(
-    readEnv("SARVAM_API_KEY") &&
-      readEnv("SARVAM_ORG_ID") &&
-      readEnv("SARVAM_WORKSPACE_ID") &&
-      (readEnv("SARVAM_APP_ID") || readEnv("SARVAM_AGENT_ID"))
-  );
+  return Boolean(platformCredentials());
 }
 
 /** Attempts Sarvam recorded in a window. Empty on any failure — never throws. */
-export async function fetchAttempts(fromIso: string, toIso: string): Promise<SarvamAttempt[]> {
-  if (!isAttemptPollingConfigured()) return [];
-
-  const key = `${fromIso}|${toIso}`;
+export async function fetchAttempts(agent: CallAgent, fromIso: string, toIso: string): Promise<SarvamAttempt[]> {
+  // Cached per agent: two workspaces' agents have different attempts.
+  const key = `${agent.appId}|${fromIso}|${toIso}`;
   if (cache && cache.key === key && Date.now() - cache.at < CACHE_TTL_MS) {
     return cache.attempts;
   }
 
-  const org = readEnv("SARVAM_ORG_ID");
-  const workspace = readEnv("SARVAM_WORKSPACE_ID");
-  const app = readEnv("SARVAM_APP_ID") || readEnv("SARVAM_AGENT_ID");
+  const { apiKey, orgId: org, workspaceId: workspace } = agent.credentials;
+  const app = agent.appId;
 
   const url =
     `${SARVAM_ANALYTICS}/${encodeURIComponent(org)}/${encodeURIComponent(workspace)}/${encodeURIComponent(app)}/attempts` +
@@ -119,7 +111,7 @@ export async function fetchAttempts(fromIso: string, toIso: string): Promise<Sar
 
   try {
     const response = await fetch(url, {
-      headers: { "X-API-Key": readEnv("SARVAM_API_KEY") },
+      headers: { "X-API-Key": apiKey },
       signal: AbortSignal.timeout(10_000),
       cache: "no-store",
     });
@@ -141,10 +133,11 @@ export async function fetchAttempts(fromIso: string, toIso: string): Promise<Sar
 }
 
 /**
- * Sarvam's record of one attempt, looked up around when Dialo placed it.
+ * Sarvam's record of one attempt, looked up around when Tringlo placed it.
  * Returns null while the attempt is still running or if Sarvam has no row yet.
  */
 export async function getProviderAttemptStatus(
+  agent: CallAgent,
   attemptId: string,
   placedAtIso: string | null
 ): Promise<ProviderAttemptStatus | null> {
@@ -153,7 +146,7 @@ export async function getProviderAttemptStatus(
   const from = new Date(placedAt - 60 * 60 * 1000).toISOString();
   const to = new Date(Math.min(Date.now() + 5 * 60 * 1000, placedAt + 6 * 60 * 60 * 1000)).toISOString();
 
-  const attempts = await fetchAttempts(from, to);
+  const attempts = await fetchAttempts(agent, from, to);
   const attempt = attempts.find((item) => item.attempt_id === attemptId);
   if (!attempt) return null;
 

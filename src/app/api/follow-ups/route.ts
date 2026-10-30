@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { notFound, ownedByTenant, requireAuth, scopeToTenant } from "@/lib/auth/guard";
-import { getFollowUp, getFollowUps, getLead, getLegacyTenantId, isLeadSuppressed, saveFollowUp, updateFollowUp } from "@/lib/db";
+import { getFollowUp, getFollowUps, getLead, isLeadSuppressed, saveFollowUp, updateFollowUp } from "@/lib/db";
 import type { FollowUp } from "@/lib/types";
 
 export async function GET(request: NextRequest) {
@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
 
   try {
     return NextResponse.json({
-      followUps: scopeToTenant(getFollowUps(), auth.tenantId, getLegacyTenantId()),
+      followUps: scopeToTenant(getFollowUps(), auth.tenantId),
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     // A follow-up can only be added for one of this workspace's own leads.
-    if (!ownedByTenant(getLead(body?.leadId), auth.tenantId, getLegacyTenantId())) {
+    if (!ownedByTenant(getLead(body?.leadId), auth.tenantId)) {
       return notFound("Lead not found");
     }
 
@@ -117,7 +117,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const existing = getFollowUp(body.id);
-    if (!existing || !ownedByTenant(existing, auth.tenantId, getLegacyTenantId())) {
+    if (!existing || !ownedByTenant(existing, auth.tenantId)) {
       return NextResponse.json({ error: "Follow-up not found" }, { status: 404 });
     }
 

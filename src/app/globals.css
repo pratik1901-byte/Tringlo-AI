@@ -29,10 +29,50 @@
 }
 
 @theme inline {
+  /* ------------------------------------------------------------------
+     Hospital panel
+
+     These utilities exist app-wide, but their VALUES are defined only under
+     `.hospital-panel` (see app/hospital/hospital.css). Outside that wrapper
+     they resolve to nothing, so adding them cannot change a pixel of the
+     platform or the public site.
+
+     `--color-ink*` are deliberately absent here: the site already defines
+     them as literals, and the hospital panel overrides those same variables
+     inside its own wrapper rather than redefining them globally.
+     ------------------------------------------------------------------ */
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-sunken: var(--sunken);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+  --color-sage: var(--sage);
+  --color-sage-soft: var(--sage-soft);
+  --color-sage-ink: var(--sage-ink);
+  --color-clay: var(--clay);
+  --color-clay-soft: var(--clay-soft);
+  --color-alert: var(--alert);
+  --color-alert-soft: var(--alert-soft);
+  --font-display: var(--font-display);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  /* Public website (editorial system). Additive: the app never uses these. */
+  --font-serif: var(--font-garamond);
+  --color-ink: #171614;
+  --color-ink-soft: #2a2825;
+  --color-ink-muted: #494640;
+  --color-ink-faint: #6b675f;
+  --color-cream: #fffcf4;
+  --color-paper: #ffffff;
+  --color-parchment: #f5f3f0;
+  --color-stone: #e0dfdc;
+  --color-stone-deep: #cbc6bd;
+  --color-iris: #5c69f8;
+  --color-iris-deep: #3c48d9;
+  --color-lime: #e8f056;
   --font-heading: var(--font-geist-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -74,100 +114,132 @@
 /* ------------------------------------------------------------------
    Palette
 
-   Near-neutral surfaces with one accent. Colour is reserved for state
-   that means something — a connected call, an overdue callback — so it
-   stays informative rather than decorative. No gradients: a flat surface
-   with a considered border reads as more precise at this density.
+   The Tringlo AI website's own colours, so the app reads as the same
+   product: warm ink on cream, white cards on stone hairlines, ink for the
+   main action (as on the website's buttons), iris for selection, focus and
+   data, and the lime kept for the one thing that should catch the eye.
+
+   Colour that means something — a connected call, an overdue callback —
+   keeps its own status colours, untouched by the brand palette.
+
+   Light and dark are two versions of one palette, not an inversion:
+
+     light  cream page, white cards, ink text, ink primary, iris accent
+     dark   the website's ink as the card surface on a deeper page, cream
+            text, cream primary, iris accent, lime focus ring — the lime is
+            how the website marks things on its dark sections
    ------------------------------------------------------------------ */
 
 :root {
-  --background: #FAFAF9;
-  --foreground: #1C1917;
+  /* Tells the browser which way to draw its own controls — date and time
+     pickers, native dropdown lists, scrollbars — so they match the theme.
+     The marketing site pins itself to light on its own root. */
+  color-scheme: light;
+
+  /* Surfaces: the website's cream page and white cards. */
+  --background: #FFFCF4;
+  --foreground: #171614;
 
   --card: #FFFFFF;
-  --card-foreground: #1C1917;
+  --card-foreground: #171614;
   --popover: #FFFFFF;
-  --popover-foreground: #1C1917;
+  --popover-foreground: #171614;
 
-  --primary: #4F46E5;
-  --primary-foreground: #FFFFFF;
+  /* The main action is ink, as on the website's buttons. */
+  --primary: #171614;
+  --primary-foreground: #FFFCF4;
 
-  --secondary: #F5F5F4;
-  --secondary-foreground: #44403C;
+  --secondary: #F5F3F0;
+  --secondary-foreground: #494640;
 
-  --muted: #F5F5F4;
-  --muted-foreground: #78716C;
+  /* Secondary text: the website's ink-faint, 5.6:1 on white, 5.4:1 on cream. */
+  --muted: #F5F3F0;
+  --muted-foreground: #6B675F;
 
-  --accent: #EEF2FF;
-  --accent-foreground: #3730A3;
+  /* Iris: selection, hover tint and anything "current". */
+  --accent: #EEF0FE;
+  --accent-foreground: #2B35A8;
 
-  --destructive: #DC2626;
+  --destructive: #C8302A;
   --destructive-foreground: #FFFFFF;
 
-  --border: #E7E5E4;
-  --input: #D6D3D1;
-  --ring: #4F46E5;
+  --border: #E0DFDC;
+  --input: #CBC6BD;
+  --ring: #5C69F8;
 
-  --chart-1: #4F46E5;
+  --chart-1: #5C69F8;
   --chart-2: #0F766E;
   --chart-3: #B45309;
   --chart-4: #B91C1C;
-  --chart-5: #64748B;
+  --chart-5: #6B675F;
+  /* The quiet companion to chart-1: volume behind a trend line. */
+  --chart-muted: #C9CEFD;
 
   --radius: 0.5rem;
 
-  --sidebar: #FFFFFF;
-  --sidebar-foreground: #1C1917;
-  --sidebar-primary: #4F46E5;
+  /* The canvas the sidebar sits on, a step below the cream page panel. */
+  --sidebar: #F3F0E8;
+  --sidebar-foreground: #171614;
+  /* The current page in the sidebar: deep iris on an iris tint, the way the
+     website marks the section being read. */
+  --sidebar-primary: #3C48D9;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #F5F5F4;
-  --sidebar-accent-foreground: #1C1917;
-  --sidebar-border: #E7E5E4;
-  --sidebar-ring: #4F46E5;
+  --sidebar-accent: #EEF0FE;
+  --sidebar-accent-foreground: #171614;
+  --sidebar-border: #E3DFD6;
+  --sidebar-ring: #5C69F8;
 }
 
 .dark {
-  --background: #0C0A09;
-  --foreground: #FAFAF9;
+  color-scheme: dark;
 
-  --card: #171514;
-  --card-foreground: #FAFAF9;
-  --popover: #1C1917;
-  --popover-foreground: #FAFAF9;
+  /* Surfaces: a page a step deeper than the website's ink, so the ink cards
+     sit up from it; popovers a step lighter again. */
+  --background: #121110;
+  --foreground: #F3F0E7;
 
-  --primary: #818CF8;
-  --primary-foreground: #1E1B4B;
+  --card: #1A1917;
+  --card-foreground: #F3F0E7;
+  --popover: #22201E;
+  --popover-foreground: #F3F0E7;
 
-  --secondary: #292524;
-  --secondary-foreground: #E7E5E4;
+  /* The main action turns to cream, as the website's buttons do on ink. */
+  --primary: #F3F0E7;
+  --primary-foreground: #171614;
 
-  --muted: #1C1917;
-  --muted-foreground: #A8A29E;
+  --secondary: #24221F;
+  --secondary-foreground: #DDD9CF;
 
-  --accent: #272449;
-  --accent-foreground: #C7D2FE;
+  /* Secondary text: cream at about 60%, 7:1 on the card surface. */
+  --muted: #211F1D;
+  --muted-foreground: #A9A59C;
 
-  --destructive: #F87171;
-  --destructive-foreground: #450A0A;
+  --accent: #23264A;
+  --accent-foreground: #C3C8FD;
 
-  --border: #292524;
-  --input: #44403C;
-  --ring: #818CF8;
+  --destructive: #F47A72;
+  --destructive-foreground: #3B0A08;
 
-  --chart-1: #818CF8;
+  --border: #2D2B28;
+  --input: #3D3A36;
+  /* The lime: how the website marks things on its dark sections. */
+  --ring: #E8F056;
+
+  --chart-1: #8C95FA;
   --chart-2: #2DD4BF;
   --chart-3: #FBBF24;
   --chart-4: #FB7185;
-  --chart-5: #94A3B8;
+  --chart-5: #A9A59C;
+  --chart-muted: #3A3F78;
 
-  --sidebar: #171514;
-  --sidebar-foreground: #FAFAF9;
-  --sidebar-primary: #818CF8;
-  --sidebar-primary-foreground: #1E1B4B;
-  --sidebar-accent: #292524;
-  --sidebar-accent-foreground: #FAFAF9;
-  --sidebar-border: #292524;
-  --sidebar-ring: #818CF8;
+  --sidebar: #0B0A09;
+  --sidebar-foreground: #F3F0E7;
+  --sidebar-primary: #B8BEFC;
+  --sidebar-primary-foreground: #171614;
+  --sidebar-accent: #23264A;
+  --sidebar-accent-foreground: #F3F0E7;
+  --sidebar-border: #262421;
+  --sidebar-ring: #E8F056;
 }
 
 @layer base {
@@ -289,20 +361,20 @@
      class sits on <html>, which is also :root, so a bare :root here would
      outrank .dark and paint the light phone palette over dark mode. */
   :root:not(.dark) {
-    --background: #F3F2EF;
-    --muted: #EEEDEA;
-    --secondary: #EEEDEA;
-    --border: #E2E0DC;
+    --background: #F5F2EA;
+    --muted: #EFECE5;
+    --secondary: #EFECE5;
+    --border: #E2DFD8;
     --sidebar: #FFFFFF;
   }
 
   :root.dark {
-    --background: #090807;
-    --card: #1A1817;
-    --popover: #1F1C1A;
-    --muted: #1F1C1A;
-    --border: #2C2826;
-    --sidebar: #141211;
+    --background: #0B0A09;
+    --card: #1A1917;
+    --popover: #211F1D;
+    --muted: #211F1D;
+    --border: #302E2A;
+    --sidebar: #141312;
   }
 
   :root {
@@ -319,6 +391,41 @@
   html {
     -webkit-tap-highlight-color: transparent;
   }
+}
+
+/* ------------------------------------------------------------------
+   Data tables
+
+   Every table in the app is hand-built on its page; these rules give them one
+   finish. Unlayered on purpose, so they sit above the utility classes on the
+   cells without each page having to change:
+
+     - a quieter header row;
+     - a row tint under the pointer, so a wide row is easy to follow across;
+     - names, phone numbers and other monospaced values never break across
+       lines — a number split in two is a number misread.
+
+   Scoped to the app's main panel, so the public website is untouched.
+   ------------------------------------------------------------------ */
+[data-app-main] table thead th {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--muted-foreground);
+}
+
+[data-app-main] table tbody tr {
+  transition: background-color 0.15s ease;
+}
+
+[data-app-main] table tbody tr:hover {
+  background-color: color-mix(in oklab, var(--muted) 70%, transparent);
+}
+
+[data-app-main] table td:first-child,
+[data-app-main] table td.font-mono,
+[data-app-main] table td .font-mono {
+  white-space: nowrap;
 }
 
 /* Room for the home indicator and the notch. The viewport is set to

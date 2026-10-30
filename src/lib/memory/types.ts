@@ -1,8 +1,8 @@
 // ============================================================
-// Dialo AI — Customer Memory Schema
+// Tringlo AI — Customer Memory Schema
 // ============================================================
 //
-// What Dialo learned about one customer, as structured facts rather than as
+// What Tringlo learned about one customer, as structured facts rather than as
 // transcripts.
 //
 // The distinction matters. A transcript is evidence; a memory is a claim
@@ -11,7 +11,7 @@
 // which there would not be if the long-term store were a pile of past
 // conversations pasted into the prompt.
 //
-// Every item records where it came from and how sure Dialo is, so nothing is
+// Every item records where it came from and how sure Tringlo is, so nothing is
 // ever presented to the agent as more certain than the conversation supports.
 // ============================================================
 
@@ -38,7 +38,15 @@ export type MemoryCategory =
   /** Their business context: team size, tooling, budget cycle. */
   | "business_context"
   /** What either side promised to do. */
-  | "commitments";
+  | "commitments"
+  /** Which product, plan or feature they asked about or wanted. */
+  | "interests"
+  /** Who else decides, and how: "will discuss with my brother". */
+  | "decision_process"
+  /** Why and when they asked to be called back. */
+  | "follow_up"
+  /** Questions they asked that were not answered, or issues left open. */
+  | "open_questions";
 
 export const MEMORY_CATEGORIES: MemoryCategory[] = [
   "profile",
@@ -49,9 +57,13 @@ export const MEMORY_CATEGORIES: MemoryCategory[] = [
   "personal_context",
   "business_context",
   "commitments",
+  "interests",
+  "decision_process",
+  "follow_up",
+  "open_questions",
 ];
 
-/** Personal life is withheld when Dialo is not confident who it is talking to. */
+/** Personal life is withheld when Tringlo is not confident who it is talking to. */
 export const SENSITIVE_CATEGORIES: MemoryCategory[] = ["personal_context"];
 
 export type MemoryStatus =
@@ -61,7 +73,7 @@ export type MemoryStatus =
   | "corrected"
   /** Superseded by a newer value of the same key. */
   | "superseded"
-  /** The customer asked Dialo to forget it. Never sent, and purgeable. */
+  /** The customer asked Tringlo to forget it. Never sent, and purgeable. */
   | "forgotten";
 
 export interface MemoryItem {
@@ -84,6 +96,12 @@ export interface MemoryItem {
    * produces exactly the robotic delivery §11 forbids.
    */
   phrase: string;
+  /**
+   * The customer's own words this was learned from, when it came from the
+   * transcript. Kept so anyone reviewing a memory can see exactly what was
+   * said, and so a fact with no evidence is recognisable as agent-reported.
+   */
+  evidence?: string | null;
 
   /** 0–1. Below CONFIDENCE_FLOOR a memory is never given to the agent. */
   confidence: number;
@@ -92,6 +110,12 @@ export interface MemoryItem {
   /** The call this was learned from, and the one that last confirmed it. */
   sourceCallId: string | null;
   lastConfirmedCallId: string | null;
+  /**
+   * Every call that stated or confirmed this, most recent last (bounded). What
+   * makes processing any call a second time — even an old one, out of order —
+   * a no-op instead of another confirmation.
+   */
+  callIds?: string[];
   /** Set when a later call corrected this item, for traceability. */
   correctedByCallId: string | null;
 
@@ -121,7 +145,7 @@ export interface CustomerProfile {
   /**
    * Set when a clearly different name appears for the same number.
    *
-   * While true, personal context is withheld from call context: Dialo is not
+   * While true, personal context is withheld from call context: Tringlo is not
    * confident enough about who is answering to repeat private details.
    */
   identityAmbiguous: boolean;
@@ -146,6 +170,10 @@ export interface CallSummary {
   interest: string | null;
   objection: string | null;
   nextStep: string | null;
+  /** The callback the customer asked for, in words ("2026-09-27 at 17:00"). */
+  callbackRequested?: string | null;
+  /** Who started the call. Absent on summaries from before inbound existed (outbound). */
+  direction?: "outbound" | "inbound";
   /** True when this call was itself a scheduled callback. */
   wasFollowUp: boolean;
 }
@@ -171,4 +199,11 @@ export interface ExtractedFact {
   isCorrection?: boolean;
   /** The key being corrected, when it differs from this fact's own key. */
   corrects?: string;
+  /** The customer's words this fact rests on, verified against the transcript. */
+  evidence?: string | null;
+  /**
+   * Keys this fact replaces outright: "it's not my sister, it's my cousin"
+   * retires the sister and stores the cousin, rather than keeping both.
+   */
+  replaces?: string[];
 }

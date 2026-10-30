@@ -1,7 +1,7 @@
 "use client";
 
 // ============================================================
-// Dialo AI — Communication Network: Choreography
+// Tringlo AI — Communication Network: Choreography
 // ============================================================
 //
 // Every GSAP timeline the authentication scene uses, in one place.

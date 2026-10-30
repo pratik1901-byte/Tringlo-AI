@@ -1,11 +1,11 @@
 "use client";
 
 import { create } from "zustand";
+import type { StateCreator } from "zustand";
 import { persist } from "zustand/middleware";
 import type {
     AgentConfig,
     AppSettings,
-    Campaign,
     CompanyProfile,
     TTSGeneration,
 } from "./types";
@@ -24,7 +24,7 @@ import type {
 // Nothing is persisted. On reload the app asks /api/auth/me again, because a
 // session can be revoked or expire while the tab is closed and only the server
 // knows.
-interface AuthUser {
+export interface AuthUser {
     id: string;
     email: string;
     name: string;
@@ -36,6 +36,12 @@ interface AuthUser {
 interface AuthState {
     status: "checking" | "signedIn" | "signedOut";
     user: AuthUser | null;
+    /** The workspace currently open on the session, or null if none is. */
+    activeTenantId: string | null;
+    /** Whether the open workspace runs the hospital panel. */
+    isHospital: boolean;
+    /** How many workspaces this account may open. */
+    workspaceCount: number;
     /** Set when a session ended by itself rather than by the user signing out. */
     expired: boolean;
     /** Asks the server who this is. Called on load and after signing in. */
@@ -44,30 +50,45 @@ interface AuthState {
         email: string,
         password: string,
         remember?: boolean
-    ) => Promise<{ ok: boolean; error?: string }>;
+    ) => Promise<{ ok: boolean; error?: string; workspaceCount?: number; activeTenantId?: string | null }>;
     signOut: () => Promise<void>;
     /** Called when any request is rejected, so one 401 signs out every screen. */
     handleUnauthorized: () => void;
+    /** Replaces the user after the server confirms a profile change. */
+    setUser: (user: AuthUser) => void;
 }
 
 export const useAuthStore = create<AuthState>()((set, get) => ({
     status: "checking",
     user: null,
+    activeTenantId: null,
+    isHospital: false,
+    workspaceCount: 0,
     expired: false,
 
     refresh: async () => {
         try {
             const response = await fetch("/api/auth/me", { cache: "no-store" });
             if (!response.ok) {
-                set({ status: "signedOut", user: null });
+                set({ status: "signedOut", user: null, activeTenantId: null, isHospital: false, workspaceCount: 0 });
                 return;
             }
             const body = await response.json();
-            set({ status: "signedIn", user: body.user ?? null, expired: false });
+            set({
+                status: "signedIn",
+                user: body.user ?? null,
+                expired: false,
+                // Null until a workspace has been opened. The shell uses it to
+                // send the account to the selector rather than to a dashboard
+                // that has no workspace to show.
+                activeTenantId: body.activeTenantId ?? null,
+                isHospital: Boolean(body.isHospital),
+                workspaceCount: typeof body.workspaceCount === "number" ? body.workspaceCount : 0,
+            });
         } catch {
             // Unreachable server is not the same as signed out, but there is
             // nothing to show either way until it answers.
-            set({ status: "signedOut", user: null });
+            set({ status: "signedOut", user: null, activeTenantId: null, isHospital: false, workspaceCount: 0 });
         }
     },
 
@@ -87,13 +108,17 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
             // The session is the cookie the server just set; the token in the
             // body is for mobile clients and is deliberately not stored here.
             set({ status: "signedIn", user: body.user ?? null, expired: false });
-            return { ok: true };
+            // One workspace opens straight away; several need choosing, and
+            // none means there is a workspace to create first.
+            const count = Array.isArray(body.workspaces) ? body.workspaces.length : 0;
+            return { ok: true, workspaceCount: count, activeTenantId: body.activeTenantId ?? null };
         } catch {
             return { ok: false, error: "Could not reach the server." };
         }
     },
 
     signOut: async () => {
+        clearBrowserHeldWorkspaceState();
         try {
             await fetch("/api/auth/logout", { method: "POST" });
         } catch {
@@ -103,8 +128,11 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         set({ status: "signedOut", user: null, expired: false });
     },
 
+    setUser: (user) => set({ user }),
+
     handleUnauthorized: () => {
         if (get().status === "signedOut") return;
+        clearBrowserHeldWorkspaceState();
         set({ status: "signedOut", user: null, expired: true });
     },
 }));
@@ -117,29 +145,8 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 // only through the hooks in lib/use-dialo-data.ts, so the database is the single
 // source of truth for anything a call produced.
 
-// --- Campaigns Store ---
-interface CampaignsState {
-    campaigns: Campaign[];
-    addCampaign: (campaign: Campaign) => void;
-    updateCampaign: (id: string, updates: Partial<Campaign>) => void;
-}
-
-export const useCampaignsStore = create<CampaignsState>()(
-    persist(
-        (set) => ({
-            campaigns: [],
-            addCampaign: (campaign) =>
-                set((state) => ({ campaigns: [...state.campaigns, campaign] })),
-            updateCampaign: (id, updates) =>
-                set((state) => ({
-                    campaigns: state.campaigns.map((c) =>
-                        c.id === id ? { ...c, ...updates } : c
-                    ),
-                })),
-        }),
-        { name: "dialo-campaigns" }
-    )
-);
+// Campaigns are server-side (lib/campaigns) and created at Sarvam; the old
+// browser-only campaign list that lived here is gone.
 
 // --- Agent Config Store ---
 interface AgentConfigState {
@@ -147,9 +154,47 @@ interface AgentConfigState {
     updateConfig: (updates: Partial<AgentConfig>) => void;
 }
 
+/**
+ * The workspace's agent configuration, held for the page that is open.
+ *
+ * Deliberately NOT persisted to localStorage. It used to be, and the browser
+ * then carried one workspace's company into the next: sign out of one
+ * workspace, sign in to another, and its AI Agent page opened holding the
+ * previous company's name, product and FAQs — which the page's auto-save then
+ * wrote into the new workspace. The server is the only source of truth for
+ * this, and it is fetched on every load.
+ */
+/** One blank configuration, shared by the store default, the sign-out reset and the Agent page. */
+export const emptyAgentConfig: AgentConfig = {
+    companyName: "",
+    industry: "",
+    companyDescription: "",
+    productName: "",
+    productDescription: "",
+    targetAudience: "",
+    qualifyingCriteria: "",
+    disqualifyingCriteria: "",
+    typicalPainPoints: "",
+    agentName: "",
+    agentPersona: "",
+    objectives: "",
+    productsServices: "",
+    features: "",
+    benefits: "",
+    pricing: "",
+    faqs: "",
+    salesObjective: "",
+    conversationGuidelines: "",
+    optionalScript: "",
+    tone: "professional",
+    callDurationGuidance: "",
+    systemPrompt: "",
+    voiceLanguage: "en-IN",
+    voiceSpeaker: "priya",
+};
+
 export const useAgentConfigStore = create<AgentConfigState>()(
-    persist(
-        (set) => ({
+    ((set) => ({
             config: {
                 companyName: "",
                 industry: "",
@@ -179,9 +224,7 @@ export const useAgentConfigStore = create<AgentConfigState>()(
             },
             updateConfig: (updates) =>
                 set((state) => ({ config: { ...state.config, ...updates } })),
-        }),
-        { name: "dialo-agent-config" }
-    )
+        })) satisfies StateCreator<AgentConfigState>
 );
 
 // --- TTS Generations Store ---
@@ -209,9 +252,9 @@ interface CompanyProfileState {
     updateProfile: (updates: Partial<CompanyProfile>) => void;
 }
 
+/** Not persisted: a company profile belongs to a workspace, not to a browser. */
 export const useCompanyProfileStore = create<CompanyProfileState>()(
-    persist(
-        (set) => ({
+    ((set) => ({
             profile: {
                 name: "",
                 industry: "",
@@ -223,9 +266,7 @@ export const useCompanyProfileStore = create<CompanyProfileState>()(
             },
             updateProfile: (updates) =>
                 set((state) => ({ profile: { ...state.profile, ...updates } })),
-        }),
-        { name: "dialo-company" }
-    )
+        })) satisfies StateCreator<CompanyProfileState>
 );
 
 // --- Settings Store ---
@@ -236,9 +277,9 @@ interface SettingsState {
     updateSettings: (updates: Partial<AppSettings>) => void;
 }
 
+/** Not persisted, for the same reason: these are the workspace's settings. */
 export const useSettingsStore = create<SettingsState>()(
-    persist(
-        (set) => ({
+    ((set) => ({
             settings: {
                 businessName: "",
                 contactEmail: "",
@@ -254,7 +295,62 @@ export const useSettingsStore = create<SettingsState>()(
             },
             updateSettings: (updates) =>
                 set((state) => ({ settings: { ...state.settings, ...updates } })),
-        }),
-        { name: "dialo-settings" }
-    )
+        })) satisfies StateCreator<SettingsState>
 );
+
+// ------------------------------------------------------------
+// Account Center
+// ------------------------------------------------------------
+//
+// Whether the account window is open, and on which tab. Global rather than
+// local to the sidebar because it is opened from two places — the desktop
+// sidebar and the phone "More" sheet — and rendered once, in the app shell.
+
+export type AccountTab = "profile" | "email" | "password";
+
+interface AccountCenterState {
+    open: boolean;
+    tab: AccountTab;
+    show: (tab?: AccountTab) => void;
+    hide: () => void;
+    setTab: (tab: AccountTab) => void;
+}
+
+export const useAccountCenter = create<AccountCenterState>()((set) => ({
+    open: false,
+    tab: "profile",
+    show: (tab = "profile") => set({ open: true, tab }),
+    hide: () => set({ open: false }),
+    setTab: (tab) => set({ tab }),
+}));
+
+// ------------------------------------------------------------
+// Leaving a workspace
+// ------------------------------------------------------------
+
+/**
+ * Empties everything the browser was holding on a workspace's behalf.
+ *
+ * Called when someone signs out or their session is refused. Without it, the
+ * next workspace signed into on this machine would open pages still showing
+ * the previous one's company, product and generated audio — and the AI Agent
+ * page's auto-save would then write them into the new workspace.
+ */
+export function clearBrowserHeldWorkspaceState(): void {
+    useAgentConfigStore.setState({ config: { ...emptyAgentConfig } });
+    useCompanyProfileStore.setState({
+        profile: { name: "", industry: "", website: "", phone: "", email: "", address: "", description: "" },
+    });
+    useTTSGenerationsStore.setState({ generations: [] });
+    if (typeof window !== "undefined") {
+        // Written by earlier versions, which persisted this state. Removed so a
+        // browser that still has them does not rehydrate another workspace's.
+        for (const key of ["dialo-agent-config", "dialo-company", "dialo-settings", "dialo-tts-generations"]) {
+            try {
+                window.localStorage.removeItem(key);
+            } catch {
+                // A browser with storage blocked has nothing to clear.
+            }
+        }
+    }
+}

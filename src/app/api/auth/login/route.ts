@@ -4,7 +4,7 @@
 //
 // Exchanges an email and password for a session.
 //
-// The response carries the token two ways, because Dialo has two kinds of
+// The response carries the token two ways, because Tringlo has two kinds of
 // client: an httpOnly cookie that a browser sends automatically and JavaScript
 // cannot read, and a `token` field that Android and iOS put in platform secure
 // storage and send as a bearer header. A browser should ignore the field and
@@ -22,7 +22,7 @@ import {
   sessionCookie,
   sessionExpiry,
 } from "@/lib/auth/sessions";
-import { findUserByEmail, saveSession, updateUser } from "@/lib/db";
+import { findUserByEmail, getTenant, membershipsForUser, saveSession, updateUser } from "@/lib/db";
 import { clientKey, rateLimit } from "@/lib/security/rate-limit";
 
 /** Enough for a person who mistypes; far too few to search a password space. */
@@ -113,25 +113,38 @@ export async function POST(request: Request) {
   }
   updateUser(user.id, updates);
 
+  // Signing in proves who you are, not which business you are here for. The
+  // session therefore starts with no workspace open — including for an account
+  // with only one, so that where you are is always something you chose.
+  const memberships = membershipsForUser(user.id);
+
   const token = generateSessionToken();
   saveSession({
     id: `sess_${now}_${Math.random().toString(36).slice(2, 10)}`,
     tokenHash: hashSessionToken(token),
     userId: user.id,
-    tenantId: user.tenantId,
+    tenantId: "",
     createdAt: new Date(now).toISOString(),
     expiresAt: sessionExpiry(now, remember),
     lastSeenAt: new Date(now).toISOString(),
     client: request.headers.get("x-dialo-client") === "mobile" ? "mobile" : "web",
   });
 
-  console.log(`AUTH_LOGIN_OK user=${user.id} tenant=${user.tenantId}`);
+  console.log(`AUTH_LOGIN_OK user=${user.id} workspaces=${memberships.length}`);
 
   return NextResponse.json(
     {
       user: toPublicUser(user),
       token,
       expiresAt: sessionExpiry(now, remember),
+      // Only this account's own workspaces, with nothing of their contents.
+      workspaces: memberships.map((membership) => ({
+        tenantId: membership.tenantId,
+        name: getTenant(membership.tenantId)?.name ?? "",
+        role: membership.role,
+        lastAccessedAt: membership.lastAccessedAt,
+      })),
+      activeTenantId: null,
     },
     {
       status: 200,

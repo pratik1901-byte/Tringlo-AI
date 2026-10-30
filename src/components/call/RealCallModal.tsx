@@ -1,7 +1,7 @@
 "use client";
 
 // ============================================================
-// Dialo AI — Live Call
+// Tringlo AI — Live Call
 // ============================================================
 // Shows exactly what the provider has told us, and nothing else.
 //
@@ -137,7 +137,7 @@ export function RealCallModal({
       } catch {
         setTrigger({
           phase: "rejected",
-          message: "Could not reach the Dialo server to place the call.",
+          message: "Could not reach the Tringlo server to place the call.",
           type: "network_error",
         });
       }
@@ -327,7 +327,7 @@ function WaitingBody({
           )}
 
           <p className="mt-6 max-w-sm text-xs leading-relaxed text-muted-foreground">
-            Sarvam does not publish ring or answer events, so Dialo will not claim the phone is
+            Sarvam does not publish ring or answer events, so Tringlo will not claim the phone is
             ringing. It checks with Sarvam every few seconds and shows the outcome as soon as the
             call ends — including if it is declined.
           </p>

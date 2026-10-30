@@ -1,5 +1,5 @@
 // ============================================================
-// Dialo AI — Core Type Definitions
+// Tringlo AI — Core Type Definitions
 // ============================================================
 
 // --- Call States ---
@@ -129,6 +129,8 @@ export interface Lead {
   createdAt: string;
   status: CallStatus;
   suppressed: boolean;
+  /** How the lead came to exist. Absent for leads created before this existed. */
+  source?: "upload" | "manual" | "campaign" | "inbound";
   /** Why the lead was suppressed (e.g. Sarvam reported do_not_call). */
   suppressedReason?: string | null;
   suppressedAt?: string | null;
@@ -164,17 +166,49 @@ export interface CallRecord {
   aiResult: AICallResult | null;
   lastContactedAt: string | null;
   nextAction: string | null;
-  humanHandoffStatus: "none" | "requested" | "assigned" | "completed";
+  /**
+   * `requested`: the agent reported the caller needed a person.
+   * `transferred`: Sarvam's own call record shows the call ended by transfer.
+   * `transfer_failed`: a transfer was needed but Sarvam shows it did not happen.
+   */
+  humanHandoffStatus: "none" | "requested" | "assigned" | "completed" | "transferred" | "transfer_failed";
 
   // --- Provider correlation ---
   provider: "sarvam";
   /** The voice agent's configured name, used to label transcript turns. */
   agentName?: string | null;
   /** Whether a person pressed Call Now, or the follow-up scheduler placed this. */
-  origin?: "manual" | "scheduler";
+  origin?: "manual" | "scheduler" | "campaign" | "demo";
+  /**
+   * Who started the call. Absent on records written before inbound existed;
+   * read through `callDirection()`, which treats absent as outbound.
+   */
+  direction?: "outbound" | "inbound";
+  /** Inbound only: the Sarvam deployment that answered, and the number dialled. */
+  providerDeploymentId?: string | null;
+  inboundNumber?: string | null;
+  /** Inbound only: why they called, as the agent reported it (never guessed). */
+  intent?: string | null;
+  /** Inbound only: resolved by the agent, escalated to a person, or neither. */
+  resolutionStatus?: "resolved" | "escalated" | "unresolved" | null;
+  /** The number a transfer went to, when Sarvam confirms one. */
+  transferredTo?: string | null;
+  /** Set on attempts placed by a Sarvam campaign. */
+  campaignId?: string | null;
+  providerCampaignId?: string | null;
+  providerCohortId?: string | null;
+  /** 0 for the first attempt at a lead, 1 for Sarvam's first retry, and so on. */
+  retryAttempt?: number | null;
+  /**
+   * What Sarvam's retry engine will do next for this lead (`retry`,
+   * `short_duration_retry`, …), or null when this attempt was final.
+   */
+  nextActionStatus?: string | null;
   providerCallId?: string;
-  /** Sarvam `attempt_id` — the correlation key between Dialo and the webhook. */
+  /** Sarvam `attempt_id` — the correlation key between Tringlo and the webhook. */
   providerAttemptId?: string;
+  /** The Sarvam agent this call ran on, recorded when it was placed. */
+  providerAppId?: string | null;
   providerInteractionId?: string | null;
   providerStatus?: string | null;
   connectivityStatus?: string | null;
@@ -211,6 +245,13 @@ export interface CallRecord {
   outputVariables?: Record<string, unknown> | null;
   /** When the interested-lead email went out, so a redelivered webhook cannot send it twice. */
   interestAlertSentAt?: string | null;
+  /**
+   * When this call was learned from, and a hash of exactly what was learned
+   * from. A redelivered webhook with the same content is skipped outright; a
+   * later webhook that adds a transcript or variables is learned from again.
+   */
+  memoryRecordedAt?: string | null;
+  memoryFingerprint?: string | null;
 }
 
 // --- Transcript ---
@@ -272,21 +313,9 @@ export interface FollowUp {
   updatedAt: string;
 }
 
-// --- Campaign ---
-export interface Campaign {
-  id: string;
-  name: string;
-  description: string;
-  status: "draft" | "active" | "paused" | "completed";
-  totalLeads: number;
-  calledLeads: number;
-  interestedLeads: number;
-  createdAt: string;
-}
-
 // --- Agent Config ---
 // The business context the voice agent speaks from. Everything here is
-// per-tenant: no company, product or agent name is hardcoded anywhere in Dialo.
+// per-tenant: no company, product or agent name is hardcoded anywhere in Tringlo.
 export interface AgentConfig {
   companyName: string;
   industry: string;
@@ -300,7 +329,7 @@ export interface AgentConfig {
   qualifyingCriteria: string;
   /**
    * What rules the lead out. Empty by default on purpose — an assumption like
-   * "personal use is not a fit" must come from the business, never from Dialo.
+   * "personal use is not a fit" must come from the business, never from Tringlo.
    */
   disqualifyingCriteria: string;
   /** Problems this product typically solves. */
@@ -406,7 +435,7 @@ export interface AppSettings {
 
 // --- Tenancy & Identity ---
 //
-// Every business using Dialo is a tenant. Leads, calls and follow-ups belong to
+// Every business using Tringlo is a tenant. Leads, calls and follow-ups belong to
 // exactly one tenant, and the API scopes every read and write to the tenant of
 // the authenticated caller, so one business can never see another's customers.
 
@@ -436,6 +465,30 @@ export interface User {
   failedAttempts: number;
 }
 
+/**
+ * One person's access to one workspace.
+ *
+ * The account is who you are; the workspace is whose data you are looking at.
+ * Keeping them apart is what lets one email own several businesses without a
+ * second account, and what makes "which workspace am I in" a server-side fact
+ * rather than something the browser asserts.
+ *
+ * `User.tenantId` still records the workspace an account was created in. It is
+ * no longer what grants access: a membership is.
+ */
+export interface WorkspaceMembership {
+  id: string;
+  userId: string;
+  tenantId: string;
+  role: "owner" | "admin" | "member";
+  /** A revoked membership is kept, so losing access leaves a trace. */
+  status: "active" | "revoked";
+  createdAt: string;
+  /** The user who granted it, or null when it came from the migration. */
+  createdBy: string | null;
+  lastAccessedAt: string | null;
+}
+
 /** What the client is allowed to know about the signed-in user. */
 export interface PublicUser {
   id: string;
@@ -462,4 +515,9 @@ export interface Session {
   lastSeenAt: string;
   /** Coarse client label for the sessions list; never a full user-agent string. */
   client: string;
+}
+
+/** Outbound unless a record says otherwise — every record before inbound existed was outbound. */
+export function callDirection(record: { direction?: "outbound" | "inbound" | null }): "outbound" | "inbound" {
+  return record.direction === "inbound" ? "inbound" : "outbound";
 }

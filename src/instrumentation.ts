@@ -1,5 +1,5 @@
 // ============================================================
-// Dialo AI — Server Startup
+// Tringlo AI — Server Startup
 // ============================================================
 // Next runs this once when the server boots. It is where the follow-up
 // scheduler starts, so agreed callbacks are placed by the server itself rather
@@ -11,6 +11,21 @@ export async function register() {
   // runtime imports this file too.
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
-  const { startScheduler } = await import("@/lib/scheduling/scheduler");
+  // Only the platform. The Wellness Hospital panel is a separate application
+  // sharing this repository; it pins its own Turbopack root so this file is
+  // not normally compiled into it at all. This is the second lock on the same
+  // door: a second scheduler in a second process would place the same callback
+  // twice, and both processes cache the database in memory, so they would
+  // overwrite each other's writes.
+  //
+  // The panel says so for itself, in its own next.config.
+  if (process.env.TRINGLO_ROLE === "panel") return;
+
+  // Moves the original single-workspace configuration onto its workspace.
+  // Guarded, so running it again changes nothing.
+  const { runStartupMigrations } = await import("./lib/db/migrations");
+  runStartupMigrations();
+
+  const { startScheduler } = await import("./lib/scheduling/scheduler");
   startScheduler();
 }

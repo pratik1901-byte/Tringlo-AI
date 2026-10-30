@@ -94,6 +94,8 @@ export interface SarvamUserConfig {
 export interface SarvamWebhookMetadata {
   lead_id: string;
   callId: string;
+  /** The Tringlo workspace the call belongs to. Tracing only, never routing. */
+  workspace_id?: string;
   company_id?: string;
   agent_id?: string;
 }
@@ -196,6 +198,19 @@ export interface SarvamWebhookPayload {
   interaction_transcript?: SarvamTranscriptTurn[] | null;
   metadata?: Record<string, unknown>;
   webhook_config?: { metadata?: Record<string, unknown> };
+
+  // --- Inbound deployment completions only ---
+  deployment_id?: string;
+
+  // --- Campaign attempts only ---
+  campaign_id?: string;
+  cohort_id?: string;
+  /** The Tringlo lead id, sent as user_identifier with the cohort. */
+  user_identifier?: string;
+  /** `retry`, `short_duration_retry`, … or null when this attempt was final. */
+  next_action_status?: string | null;
+  executed_at?: string | null;
+  initial_agent_variables?: Record<string, unknown> | null;
 }
 
 export interface SarvamConfigStatus {

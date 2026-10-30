@@ -73,7 +73,7 @@ export async function GET(request: Request) {
   if (!auth.ok) return auth.response;
 
   try {
-    const status = sarvamVoiceService.getConfigurationStatus();
+    const status = sarvamVoiceService.getConfigurationStatus(auth.tenantId);
     const probe = await probeSarvam();
 
     return NextResponse.json({

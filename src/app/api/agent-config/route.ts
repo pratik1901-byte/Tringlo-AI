@@ -15,8 +15,8 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response;
 
   return NextResponse.json({
-    agentConfig: getAgentConfig(),
-    callingWindow: getCallingWindow(),
+    agentConfig: getAgentConfig(auth.tenantId),
+    callingWindow: getCallingWindow(auth.tenantId),
   });
 }
 
@@ -27,15 +27,15 @@ export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
 
-    const agentConfig = body?.agentConfig ? saveAgentConfig(body.agentConfig) : getAgentConfig();
+    const agentConfig = body?.agentConfig ? saveAgentConfig(auth.tenantId, body.agentConfig) : getAgentConfig(auth.tenantId);
 
     const callingWindow = body?.callingWindow
-      ? saveCallingWindow({
+      ? saveCallingWindow(auth.tenantId, {
           from: String(body.callingWindow.from || "09:00"),
           to: String(body.callingWindow.to || "20:00"),
           timezone: String(body.callingWindow.timezone || "Asia/Kolkata"),
         })
-      : getCallingWindow();
+      : getCallingWindow(auth.tenantId);
 
     return NextResponse.json({ agentConfig, callingWindow });
   } catch (error: unknown) {

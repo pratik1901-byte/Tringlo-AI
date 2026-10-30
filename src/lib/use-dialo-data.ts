@@ -1,7 +1,7 @@
 "use client";
 
 // ============================================================
-// Dialo AI — Server State Hooks
+// Tringlo AI — Server State Hooks
 // ============================================================
 // Every screen reads the database through these hooks. There is no client-side
 // cache of call results: a call outcome exists in exactly one place, and the UI
@@ -63,6 +63,14 @@ function useResource<T>(url: string, intervalMs: number | null): Resource<T> {
         // had actually happened was that nobody was signed in. Telling the
         // auth store instead sends the person to the login screen.
         if (response.status === 401) {
+          // Signed in, but no workspace is open — the account just needs to
+          // choose one. That is not a dead session, so do not sign them out.
+          if (body?.error?.code === "no_workspace") {
+            if (typeof window !== "undefined" && window.location.pathname !== "/workspaces") {
+              window.location.replace("/workspaces");
+            }
+            throw new Error("Choose a workspace to continue.");
+          }
           useAuthStore.getState().handleUnauthorized();
           throw new Error("Your session has ended. Sign in again.");
         }
@@ -126,6 +134,11 @@ function useResource<T>(url: string, intervalMs: number | null): Resource<T> {
 }
 
 // ------------------------------------------------------------
+
+/** Any authenticated JSON endpoint, with the same refresh and 401 handling. */
+export function useApi<T>(url: string, intervalMs: number | null = null): Resource<T> {
+  return useResource<T>(url, intervalMs);
+}
 
 export function useCallRecords(intervalMs: number | null = 6000) {
   const resource = useResource<{ records: CallRecord[] }>(

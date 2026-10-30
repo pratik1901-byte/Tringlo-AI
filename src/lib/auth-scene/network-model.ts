@@ -1,5 +1,5 @@
 // ============================================================
-// Dialo AI — Communication Network: Geometry
+// Tringlo AI — Communication Network: Geometry
 // ============================================================
 //
 // The shape of the background scene, kept apart from how it animates.

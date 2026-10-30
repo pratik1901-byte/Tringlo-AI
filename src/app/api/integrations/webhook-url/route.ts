@@ -9,7 +9,7 @@ import { clientKey, rateLimit } from "@/lib/security/rate-limit";
  *
  * The `Host` header cannot be trusted for this: it is set by the caller, so a
  * request arriving through the public tunnel can claim `Host: localhost` and
- * would have passed a host-only check. Pointing Dialo's webhook at an attacker's
+ * would have passed a host-only check. Pointing Tringlo's webhook at an attacker's
  * server would hand them every transcript.
  *
  * So: a shared secret when one is configured, and otherwise only a request that

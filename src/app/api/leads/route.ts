@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { notFound, ownedByTenant, requireAuth, scopeToTenant } from "@/lib/auth/guard";
-import { deleteLead, getLead, getLeads, getLegacyTenantId, saveLead, suppressLead, updateLead } from "@/lib/db";
+import { deleteLead, getLead, getLeads, saveLead, suppressLead, updateLead } from "@/lib/db";
+import { cleanPersonName, renameLead } from "@/lib/customers/rename";
 import type { Lead } from "@/lib/types";
 
 export async function GET(request: NextRequest) {
@@ -10,7 +11,7 @@ export async function GET(request: NextRequest) {
 
   try {
     return NextResponse.json({
-      leads: scopeToTenant(getLeads(), auth.tenantId, getLegacyTenantId()),
+      leads: scopeToTenant(getLeads(), auth.tenantId),
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -68,7 +69,7 @@ export async function PATCH(request: NextRequest) {
 
   try {
     const body = await request.json();
-    if (!ownedByTenant(getLead(body?.id), auth.tenantId, getLegacyTenantId())) {
+    if (!ownedByTenant(getLead(body?.id), auth.tenantId)) {
       return notFound("Lead not found");
     }
     if (!body?.id) {
@@ -83,11 +84,35 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ id: body.id, suppressed: true, reason });
     }
 
-    // `suppressed` is intentionally not updatable here — it has its own branch above.
-    const safeUpdates = { ...body };
-    delete safeUpdates.suppressed;
+    // Only these fields are editable. Anything else in the body — the
+    // workspace, the phone (the contact's identity), status, suppression — is
+    // ignored, never written.
+    const updates: Partial<Lead> = {};
+    for (const field of ["email", "company", "notes"] as const) {
+      if (body[field] === undefined) continue;
+      const value = typeof body[field] === "string" ? body[field].trim() : "";
+      if (value.length > (field === "notes" ? 2000 : 200)) {
+        return NextResponse.json({ error: `${field} is too long.` }, { status: 400 });
+      }
+      if (field === "email" && value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+        return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
+      }
+      updates[field] = value || undefined;
+    }
 
-    const updated = updateLead(body.id, safeUpdates);
+    if (body.name !== undefined) {
+      if (!cleanPersonName(body.name)) {
+        return NextResponse.json(
+          { error: "Enter the person's name — letters only, 2 to 60 characters." },
+          { status: 400 }
+        );
+      }
+      // Carries the name onto the contact's calls, follow-ups and memory, and
+      // to the inbound line.
+      renameLead(body.id, body.name, "team");
+    }
+
+    const updated = Object.keys(updates).length ? updateLead(body.id, updates) : getLead(body.id);
     if (!updated) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
@@ -109,7 +134,7 @@ export async function DELETE(request: NextRequest) {
     if (!id) {
       return NextResponse.json({ error: "id query parameter is required" }, { status: 400 });
     }
-    if (!ownedByTenant(getLead(id), auth.tenantId, getLegacyTenantId())) {
+    if (!ownedByTenant(getLead(id), auth.tenantId)) {
       return notFound("Lead not found");
     }
 

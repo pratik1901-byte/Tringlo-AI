@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { EB_Garamond, Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AppShell } from "@/components/layout/app-shell";
 
@@ -13,8 +13,16 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// The brand's serif — the website's headings — for page titles and headline
+// figures in the app, so the product and the website speak in one voice.
+const garamond = EB_Garamond({
+  variable: "--font-garamond",
+  subsets: ["latin"],
+  display: "swap",
+});
+
 export const metadata: Metadata = {
-  title: "Dialo AI",
+  title: "Tringlo AI",
   description:
     "Place real outbound sales calls with an AI voice agent, and see the transcript, outcome and follow-up for every one.",
 };
@@ -41,8 +49,8 @@ export const viewport: Viewport = {
   viewportFit: "cover",
   interactiveWidget: "resizes-content",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#F3F2EF" },
-    { media: "(prefers-color-scheme: dark)", color: "#090807" },
+    { media: "(prefers-color-scheme: light)", color: "#F5F2EA" },
+    { media: "(prefers-color-scheme: dark)", color: "#0B0A09" },
   ],
 };
 
@@ -50,9 +58,11 @@ export const viewport: Viewport = {
  * Applies the saved theme before the first paint.
  *
  * Toggling the class from an effect instead would render one frame in the wrong
- * theme on every page load.
+ * theme on every page load. A saved choice wins; with none, the system's
+ * preference decides. A choice saved under the product's old name is carried
+ * over once, so nobody's setting resets.
  */
-const THEME_BOOTSTRAP = `(function(){try{var s=localStorage.getItem("dialo-theme");var d=s==="dark"||(!s&&window.matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.toggle("dark",d);}catch(e){}})();`;
+const THEME_BOOTSTRAP = `(function(){try{var k="tringlo-theme",s=localStorage.getItem(k);if(!s){s=localStorage.getItem("dialo-theme");if(s){localStorage.setItem(k,s);localStorage.removeItem("dialo-theme");}}var d=s==="dark"||(!s&&window.matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.toggle("dark",d);}catch(e){}})();`;
 
 /**
  * Development only: stops React's DevTools timing from crashing the page on
@@ -74,7 +84,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${garamond.variable} h-full antialiased`}
     >
       <head>
         {/* Before React loads, so its first render is already covered. */}

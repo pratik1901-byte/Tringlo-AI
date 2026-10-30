@@ -1,5 +1,5 @@
 // ============================================================
-// Dialo AI — Follow-up Scheduler
+// Tringlo AI — Follow-up Scheduler
 // ============================================================
 //
 // Places agreed callbacks without anyone pressing a button.
@@ -28,6 +28,40 @@ import {
 import { effectiveWebhookBaseUrl, placeCall } from "@/lib/calls/place-call";
 import { repairStaleLeadStatuses } from "@/lib/calls/lead-status";
 import { runDailySummaries } from "@/lib/notifications";
+import { syncDueCampaigns } from "@/lib/campaigns/sync";
+import { maintainInbound } from "@/lib/inbound/service";
+import { purgeOrphanedLeadData, scrubDerivedText } from "@/lib/db";
+import { isInstructionText } from "@/lib/providers/sarvam/instruction-text";
+
+/**
+ * Once per server start: clears agent instruction text that earlier versions
+ * stored as if it were a call result or a customer memory. Idempotent.
+ */
+let instructionTextRepaired = false;
+function repairInstructionTextOnce() {
+  if (instructionTextRepaired) return;
+  instructionTextRepaired = true;
+  const result = scrubDerivedText(isInstructionText);
+  if (result.calls || result.summaries || result.memories) {
+    console.log(`REPAIRED_INSTRUCTION_TEXT calls=${result.calls} summaries=${result.summaries} memories=${result.memories}`);
+  }
+  // Data left behind by lead deletes from before deletes cascaded.
+  const orphans = purgeOrphanedLeadData();
+  if (orphans.calls || orphans.followUps || orphans.campaignEntries) {
+    console.log(`PURGED_DELETED_LEAD_DATA calls=${orphans.calls} followUps=${orphans.followUps} campaignEntries=${orphans.campaignEntries}`);
+  }
+  // Callbacks created from call results used to carry no workspace, which
+  // hid them from every workspace but the original one.
+  let tagged = 0;
+  for (const followUp of getFollowUps()) {
+    if (followUp.tenantId) continue;
+    const tenantId = getLead(followUp.leadId)?.tenantId;
+    if (!tenantId) continue;
+    updateFollowUp(followUp.id, { tenantId } as Partial<FollowUp>);
+    tagged++;
+  }
+  if (tagged) console.log(`TAGGED_FOLLOW_UPS_WITH_WORKSPACE count=${tagged}`);
+}
 import { isWorthReconciling, reconcileCallWithProvider } from "@/lib/calls/reconcile";
 import { getCallRecords } from "@/lib/db";
 import { instantToZonedParts, isValidTimeZone, zonedTimeToInstant } from "./time";
@@ -174,7 +208,7 @@ async function executeFollowUp(followUp: FollowUp, now: number): Promise<TickOut
     return { ...base, result: "cancelled", detail: "Lead is on the do-not-call list." };
   }
 
-  // A retry is a time Dialo chose (after no answer, busy, or a failed trigger);
+  // A retry is a time Tringlo chose (after no answer, busy, or a failed trigger);
   // a first attempt is a time the customer chose. They are treated differently
   // below, so tell them apart before anything else.
   const isRetry = Boolean(followUp.nextAttemptAt);
@@ -217,11 +251,12 @@ async function executeFollowUp(followUp: FollowUp, now: number): Promise<TickOut
   }
 
   // --- Calling window ---
-  // The window stops Dialo choosing an unreasonable hour. It does not override a
+  // The window stops Tringlo choosing an unreasonable hour. It does not override a
   // time the customer asked for: "call me in two minutes" at 8:45 pm is consent
   // to a call at 8:47 pm. Blocking those is what made evening callbacks silently
   // never happen — Priya promised a call, the scheduler refused it.
-  const window = getCallingWindow();
+  // A lead with no workspace gets the default hours, never another workspace's.
+  const window = getCallingWindow(lead.tenantId ?? "");
   const check = isInsideCallingWindow(now, window);
   if (!check.inside) {
     if (!isRetry) {
@@ -229,7 +264,7 @@ async function executeFollowUp(followUp: FollowUp, now: number): Promise<TickOut
         `SCHEDULER_WINDOW_OVERRIDDEN followUp=${followUp.id} reason=customer_requested_time`
       );
     } else {
-      // A retry is Dialo's choice, so it waits for the window to open rather
+      // A retry is Tringlo's choice, so it waits for the window to open rather
       // than dead-ending — the customer did ask to be called back.
       const opensAt = nextWindowOpening(now, window);
       releaseFollowUp(followUp.id, {
@@ -411,6 +446,16 @@ export async function runSchedulerTick(now = Date.now()): Promise<TickReport> {
   // date before sending, so an overlapping tick cannot send it twice.
   await runDailySummaries(now);
 
+  repairInstructionTextOnce();
+
+  // Campaign results are pulled from Sarvam's records as well as pushed by its
+  // webhook, so a webhook address that changed mid-campaign loses nothing.
+  await syncDueCampaigns(now);
+
+  // Inbound lines (only for workspaces that switched inbound on): status from
+  // Sarvam, the webhook address kept current, known callers refreshed daily.
+  await maintainInbound(now);
+
   const due = getDueFollowUps(now, LOCK_TIMEOUT_MS);
 
   for (const followUp of due) {
@@ -491,6 +536,24 @@ export function startScheduler(): void {
     running = true;
     try {
       await runSchedulerTick();
+      // Appointment confirmation calls ride the same timer: one server-side
+      // worker, so they survive a restart exactly as agreed callbacks do. Its
+      // own failure must not stop callbacks from being placed.
+      try {
+        const { runReminderTick } = await import("@/lib/hospital/reminders");
+        await runReminderTick();
+      } catch (error) {
+        console.error("[Scheduler] Confirmation call pass failed:", error instanceof Error ? error.message : error);
+      }
+      // And the hospital's provider directory is refreshed here rather than
+      // from a browser, so a hospital whose panel nobody has open still has a
+      // current list of who consults when the next call arrives.
+      try {
+        const { refreshHospitalDirectories } = await import("@/lib/hospital/directory");
+        await refreshHospitalDirectories();
+      } catch (error) {
+        console.error("[Scheduler] Provider directory refresh failed:", error instanceof Error ? error.message : error);
+      }
       globalThis.__dialoSchedulerLastTick = new Date().toISOString();
       globalThis.__dialoSchedulerLastError = undefined;
     } catch (error: unknown) {

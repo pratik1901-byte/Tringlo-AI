@@ -1,7 +1,7 @@
 // ============================================================
-// Dialo AI — Display Formatting
+// Tringlo AI — Display Formatting
 // ============================================================
-// One rule, applied everywhere: a value Dialo does not have renders as an em
+// One rule, applied everywhere: a value Tringlo does not have renders as an em
 // dash. No "0%", no "N/A", no invented placeholder text standing in for a
 // number that was never measured.
 // ============================================================
@@ -35,10 +35,10 @@ export function formatPercent(value: number | null | undefined, digits = 1): str
 }
 
 /** Signed delta, for week-over-week style comparisons. Null means no baseline existed. */
-export function formatDelta(value: number | null | undefined, suffix = ""): string {
+export function formatDelta(value: number | null | undefined, suffix = "", digits = 1): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return EMPTY;
   const sign = value > 0 ? "+" : "";
-  return `${sign}${value.toFixed(1)}${suffix}`;
+  return `${sign}${value.toFixed(digits)}${suffix}`;
 }
 
 export function formatCount(value: number | null | undefined): string {
@@ -72,6 +72,31 @@ export function formatText(value: string | null | undefined): string {
   return trimmed ? trimmed : EMPTY;
 }
 
+/**
+ * A machine value as a reader sees it: "human_handoff" → "Human handoff".
+ * Values that mean "nothing was reported" become an em dash rather than the
+ * word "none", which reads as a decision the agent made.
+ */
+/** An Indian number as "+91 72598 49576". Anything else is left as it is. */
+export function formatPhone(value: string | null | undefined): string {
+  const raw = (value ?? "").trim();
+  if (!raw) return EMPTY;
+  const digits = raw.replace(/\D/g, "");
+  const national = digits.length > 10 && digits.startsWith("91") ? digits.slice(-10) : digits;
+  if (national.length !== 10) return raw;
+  return `+91 ${national.slice(0, 5)} ${national.slice(5)}`;
+}
+
+export function formatLabel(value: string | null | undefined): string {
+  const trimmed = (value ?? "").trim();
+  if (!trimmed) return EMPTY;
+  const lower = trimmed.toLowerCase();
+  if (["none", "na", "n/a", "null", "unknown", "not reported", "no_value"].includes(lower)) return EMPTY;
+  // Only reshape machine values; a sentence the agent wrote is left as it is.
+  if (/[A-Z]/.test(trimmed) || /\s/.test(trimmed)) return trimmed;
+  return lower.replace(/[_-]+/g, " ").replace(/^./, (character) => character.toUpperCase());
+}
+
 export function formatInterest(value: InterestLevel | string | null | undefined): string {
   if (!value) return EMPTY;
   const lowered = String(value).toLowerCase();
@@ -98,7 +123,7 @@ export interface StatusPresentation {
  *
  * `calling` deliberately reads "Waiting for provider" rather than "Ringing":
  * Sarvam's instant-outbound webhook reports the outcome of the attempt, not
- * per-leg ring events, so Dialo cannot honestly claim the phone is ringing.
+ * per-leg ring events, so Tringlo cannot honestly claim the phone is ringing.
  */
 const CALL_STATUS: Record<CallStatus, StatusPresentation> = {
   queued: { label: "Queued", description: "Not yet dialled.", tone: "neutral" },
@@ -151,7 +176,7 @@ export function callStatusPresentation(status: string | null | undefined): Statu
 }
 
 /**
- * How long Dialo waits for a completion webhook before it stops describing a
+ * How long Tringlo waits for a completion webhook before it stops describing a
  * call as in progress. Sarvam delivers the result when the attempt ends, so an
  * attempt still silent after this has almost certainly lost its webhook.
  */
@@ -168,7 +193,7 @@ const NO_RESULT: StatusPresentation = {
  * Presentation for a whole call, rather than its status alone.
  *
  * An attempt stuck in `calling` long past the timeout is reported as "no result
- * received" — a statement about what Dialo knows, not a claim that the phone is
+ * received" — a statement about what Tringlo knows, not a claim that the phone is
  * still ringing. Pass `now` from a ticking clock so this updates on its own.
  */
 export function callStatePresentation(

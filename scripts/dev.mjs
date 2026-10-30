@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ============================================================
-// Dialo AI — Development Launcher
+// Tringlo AI — Development Launcher
 // ============================================================
 //
 // Starts the app and a public tunnel together, and keeps them agreeing about

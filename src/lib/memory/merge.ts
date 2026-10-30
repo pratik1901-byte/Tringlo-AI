@@ -1,5 +1,5 @@
 // ============================================================
-// Dialo AI — Memory Merge
+// Tringlo AI — Memory Merge
 // ============================================================
 //
 // Folds the facts from one call into what is already known.
@@ -21,11 +21,22 @@
 //      row stays with `status: superseded`, so the history of what was believed
 //      and when remains answerable.
 //
+//   5. The same call twice changes nothing. A redelivered webhook must not
+//      confirm a fact against itself and inflate its confidence, so anything
+//      already confirmed by this call id is left alone.
+//
 // Nothing is ever destroyed here. Retired memories keep the call id that
 // retired them, which is what makes §6's provenance question answerable.
 // ============================================================
 
 import type { ExtractedFact, MemoryItem } from "./types";
+
+/** How many confirming call ids a memory keeps. */
+const MAX_CALL_IDS = 20;
+
+function withCall(ids: string[] | undefined, callId: string): string[] {
+  return [...(ids ?? []).filter((id) => id !== callId), callId].slice(-MAX_CALL_IDS);
+}
 
 /** Confidence gained each time a fact is independently repeated. */
 const CONFIRMATION_BOOST = 0.05;
@@ -37,6 +48,10 @@ export interface MergeOutcome {
   confirmed: number;
   corrected: number;
   superseded: number;
+}
+
+function sameText(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
 function newId(): string {
@@ -69,11 +84,13 @@ export function mergeFacts(
   // Working copy so several facts in one call see each other's effects.
   const working = existing.map((item) => ({ ...item }));
 
+  // The active row for a key if there is one; otherwise the most recently
+  // superseded, so a value that comes back is recognised as a return.
   const liveMatch = (key: string) =>
-    working.find(
-      (item) =>
-        item.key === key && (item.status === "active" || item.status === "superseded")
-    );
+    working.find((item) => item.key === key && item.status === "active") ??
+    working
+      .filter((item) => item.key === key && item.status === "superseded")
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
 
   const record = (item: MemoryItem) => {
     changed.set(item.id, item);
@@ -86,8 +103,10 @@ export function mergeFacts(
     // ---- an explicit correction retires what it contradicts --------------
     if (fact.isCorrection) {
       const target = fact.corrects ?? fact.key;
+      // The denial itself is also an active row for this key; it must never
+      // retire itself when the same call is processed again.
       const current = working.find(
-        (item) => item.key === target && item.status === "active"
+        (item) => item.key === target && item.status === "active" && item.value !== "false"
       );
 
       if (current) {
@@ -115,10 +134,12 @@ export function mergeFacts(
           key: target,
           value: "false",
           phrase: fact.phrase,
+          evidence: fact.evidence ?? null,
           confidence: fact.confidence,
           status: "active",
           sourceCallId: callId,
           lastConfirmedCallId: callId,
+          callIds: [callId],
           correctedByCallId: null,
           firstObservedAt: at,
           lastConfirmedAt: at,
@@ -128,6 +149,34 @@ export function mergeFacts(
         outcome.created++;
       }
       continue;
+    }
+
+    // ---- a suppressed memory stays suppressed -----------------------------
+    //
+    // Someone deleted this from the customer's record. Hearing the same thing
+    // again is not consent to bring it back.
+    if (
+      working.some(
+        (item) => item.key === fact.key && item.status === "forgotten" && sameText(item.value, fact.value)
+      )
+    ) {
+      continue;
+    }
+
+    // ---- a stated replacement retires what it replaces ---------------------
+    //
+    // Only rows with a different value: the replacement itself, seen again on
+    // a redelivery, is not something to retire.
+    for (const key of fact.replaces ?? []) {
+      for (const item of working.filter(
+        (candidate) =>
+          candidate.key === key &&
+          candidate.status === "active" &&
+          !(key === fact.key && sameText(candidate.value, fact.value))
+      )) {
+        record({ ...item, status: "corrected", correctedByCallId: callId, updatedAt: at });
+        outcome.corrected++;
+      }
     }
 
     // ---- an existing memory for this key ---------------------------------
@@ -142,10 +191,12 @@ export function mergeFacts(
         key: fact.key,
         value: fact.value,
         phrase: fact.phrase,
+        evidence: fact.evidence ?? null,
         confidence: fact.confidence,
         status: "active",
         sourceCallId: callId,
         lastConfirmedCallId: callId,
+        callIds: [callId],
         correctedByCallId: null,
         firstObservedAt: at,
         lastConfirmedAt: at,
@@ -161,7 +212,15 @@ export function mergeFacts(
     // that would arrive as a correction of the denial.
     if (current.status === "corrected") continue;
 
-    const sameValue = current.value.trim().toLowerCase() === fact.value.trim().toLowerCase();
+    const sameValue = sameText(current.value, fact.value);
+
+    // Already learned or confirmed from this very call: a redelivery.
+    if (
+      (current.lastConfirmedCallId === callId || current.callIds?.includes(callId)) &&
+      (sameValue || current.status === "active")
+    ) {
+      continue;
+    }
 
     if (sameValue) {
       record({
@@ -169,10 +228,12 @@ export function mergeFacts(
         status: "active",
         confidence: Math.min(MAX_CONFIDENCE, current.confidence + CONFIRMATION_BOOST),
         lastConfirmedCallId: callId,
+        callIds: withCall(current.callIds, callId),
         lastConfirmedAt: at,
         updatedAt: at,
         // A repeat of something previously superseded means it is current again.
         phrase: fact.phrase || current.phrase,
+        evidence: fact.evidence ?? current.evidence ?? null,
       });
       outcome.confirmed++;
       continue;
@@ -196,10 +257,12 @@ export function mergeFacts(
       key: fact.key,
       value: fact.value,
       phrase: fact.phrase,
+      evidence: fact.evidence ?? null,
       confidence: fact.confidence,
       status: "active",
       sourceCallId: callId,
       lastConfirmedCallId: callId,
+      callIds: [callId],
       correctedByCallId: null,
       firstObservedAt: current.firstObservedAt,
       lastConfirmedAt: at,

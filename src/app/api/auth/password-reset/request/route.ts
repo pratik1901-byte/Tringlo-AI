@@ -91,7 +91,7 @@ export async function POST(request: Request) {
     code,
     expiresInMinutes: Math.round(OTP_TTL_MS / 60_000),
     expiresAt: new Date(now + OTP_TTL_MS).toISOString(),
-    timeZone: getCallingWindow().timezone || "Asia/Kolkata",
+    timeZone: getCallingWindow(user.tenantId).timezone || "Asia/Kolkata",
   });
   const sent = await sendMail({ to: user.email, ...message });
 

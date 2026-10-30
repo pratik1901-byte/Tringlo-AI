@@ -2,7 +2,7 @@
 // /api/customers/:id/context
 // ============================================================
 //
-// What Dialo remembers about one customer.
+// What Tringlo remembers about one customer.
 //
 // GET returns it for display. DELETE forgets it, which is what a customer's
 // "delete what you hold about me" request resolves to.
@@ -18,6 +18,7 @@ import { NextResponse } from "next/server";
 
 import { requireAuth } from "@/lib/auth/guard";
 import { forgetCustomerMemory, getCustomerProfile, getMemoryItems } from "@/lib/db";
+import { buildCallContext } from "@/lib/memory/context";
 import { CONFIDENCE_FLOOR } from "@/lib/memory/types";
 
 export async function GET(
@@ -40,11 +41,15 @@ export async function GET(
 
   const items = getMemoryItems(auth.tenantId, id);
 
+  // Exactly what the agent would be given if this customer were called now,
+  // so what Priya "knows" is never a mystery to the people using Tringlo.
+  const next = buildCallContext(profile, items, { isFollowUp: false });
+
   return NextResponse.json(
     {
       customer: {
         id: profile.id,
-        // The name Dialo would use, plus a flag where it is unsure who this is.
+        // The name Tringlo would use, plus a flag where it is unsure who this is.
         name: profile.names[0] ?? null,
         phone: profile.phoneE164 ?? profile.phoneNational,
         identityAmbiguous: profile.identityAmbiguous,
@@ -62,10 +67,21 @@ export async function GET(
           // Surfaced so the UI can mark an uncertain memory as uncertain
           // rather than presenting everything as settled.
           certain: item.confidence >= CONFIDENCE_FLOOR + 0.2,
+          evidence: item.evidence ?? null,
           firstObservedAt: item.firstObservedAt,
           lastConfirmedAt: item.lastConfirmedAt,
           sourceCallId: item.sourceCallId,
         })),
+      nextCallContext: {
+        previousInteraction: next.previousInteraction,
+        customerMemoryContext: next.customerMemoryContext,
+        lastCallSummary: next.lastCallSummary,
+        previousInterest: next.previousInterest,
+        previousObjection: next.previousObjection,
+        previousCommitment: next.previousCommitment,
+        previousNextStep: next.previousNextStep,
+        memoriesUsed: next.usedItems.map((item) => item.id),
+      },
       // Retired memories, so a person can see what was corrected and when.
       corrected: items
         .filter((item) => item.status === "corrected")
@@ -91,7 +107,7 @@ export async function GET(
 }
 
 /**
- * Forgets what Dialo knows about this customer.
+ * Forgets what Tringlo knows about this customer.
  *
  * `?hard=1` erases the rows; the default hides them but keeps provenance.
  * Erasure is the right answer to a deletion request, and hiding is the right

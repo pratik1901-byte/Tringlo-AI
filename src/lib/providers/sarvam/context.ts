@@ -2,7 +2,7 @@
 // Sarvam Voice Agents — Business Context Mapping
 // ============================================================
 //
-// Turns the Agent Configuration saved on the Dialo website into the agent
+// Turns the Agent Configuration saved on the Tringlo website into the agent
 // variables Sarvam will actually accept.
 //
 // The problem this solves: the agent used to receive `product_name` and nothing
@@ -24,6 +24,7 @@
 // SARVAM_AGENT_VARIABLES, and this module switches to them automatically.
 // ============================================================
 
+import { withCallRules } from "./call-rules";
 import type { AgentConfig } from "@/lib/types";
 
 export interface BusinessContext {
@@ -166,7 +167,8 @@ const ROUTES: ContextRoute[] = [
   {
     preferred: "sales_objectives",
     fallback: "proposedNextStepDefault",
-    value: (c) => c.salesObjective,
+    // The call's goal, followed by the rules that keep the call short.
+    value: (c) => withCallRules(c.salesObjective),
   },
   {
     // The product description is the single most important value here, so it
@@ -188,7 +190,7 @@ const ROUTES: ContextRoute[] = [
   {
     // Only rules the business actually configured. Nothing is inferred here —
     // this is where an assumption like "personal use is not a fit" would come
-    // from, and it must come from the customer, not from Dialo.
+    // from, and it must come from the customer, not from Tringlo.
     preferred: "disqualifying_criteria",
     fallback: "disqualifyingSignals",
     value: (c) => c.disqualifyingCriteria,
@@ -323,9 +325,15 @@ export function mapContextToVariables(
     unroutable.push("business_context");
   }
 
-  if (context.agentName) {
-    if (declared.has("agent_name")) variables.agent_name = context.agentName;
-    else if (declared.has("userName")) variables.userName = context.agentName;
+  // The agent's own name goes only where it unambiguously means the agent.
+  //
+  // It used to fall back to `userName`, which on 9 October 2026 sent the agent
+  // name "Maya" as the customer's name on a live call: `userName` is a
+  // customer-name alias, so the two conflicted. An agent that does not declare
+  // `agent_name` already knows what it is called from its own prompt, so
+  // dropping it is the safe side to err on.
+  if (context.agentName && declared.has("agent_name")) {
+    variables.agent_name = context.agentName;
   }
 
   return { variables, usingFallbackFor, unroutable };

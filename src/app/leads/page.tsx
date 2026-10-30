@@ -2,13 +2,14 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Phone, RefreshCw, Search, ShieldOff, Trash2, Upload, Users } from "lucide-react";
+import { Loader2, Pencil, Phone, RefreshCw, Search, ShieldOff, Trash2, Upload, Users } from "lucide-react";
 
 import type { Lead } from "@/lib/types";
+import { isPlaceholderName } from "@/lib/customers/placeholder";
 import { useAgentConfigStore } from "@/lib/store";
 import { useLeads } from "@/lib/use-dialo-data";
 import { useModalEntrance, useReveal } from "@/lib/animation";
-import { EMPTY, formatText } from "@/lib/format";
+import { EMPTY, formatPhone, formatText } from "@/lib/format";
 import {
   EmptyState,
   ErrorState,
@@ -24,6 +25,7 @@ export default function LeadsPage() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [activeLead, setActiveLead] = useState<Lead | null>(null);
+  const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [pendingAction, setPendingAction] = useState<
     { kind: "delete" | "suppress"; lead: Lead } | null
   >(null);
@@ -193,9 +195,12 @@ export default function LeadsPage() {
                 {filtered.map((lead) => (
                   <li key={lead.id} className="rounded-lg border bg-card px-4 py-3">
                     <div className="min-w-0">
-                      <p className="truncate font-medium leading-tight">{lead.name}</p>
+                      <p className="truncate font-medium leading-tight">
+                        {lead.name}
+                        <AddNameButton lead={lead} onEdit={setEditingLead} />
+                      </p>
                       <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
-                        {lead.phone}
+                        {formatPhone(lead.phone)}
                         {lead.company ? ` · ${lead.company}` : ""}
                       </p>
                     </div>
@@ -226,6 +231,13 @@ export default function LeadsPage() {
                           </button>
                         </>
                       )}
+                      <button
+                        onClick={() => setEditingLead(lead)}
+                        aria-label={`Edit ${lead.name}`}
+                        className="inline-flex h-11 w-11 items-center justify-center rounded-md border text-muted-foreground active:bg-muted"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
                       <button
                         onClick={() => setPendingAction({ kind: "delete", lead })}
                         aria-label={`Delete ${lead.name}`}
@@ -271,20 +283,23 @@ export default function LeadsPage() {
                           className="group border-b transition-colors last:border-b-0 hover:bg-muted/40"
                         >
                           <td className="px-5 py-3.5">
-                            <p className="font-medium leading-tight">{lead.name}</p>
+                            <p className="font-medium leading-tight">
+                              {lead.name}
+                              <AddNameButton lead={lead} onEdit={setEditingLead} />
+                            </p>
                             {lead.email && (
                               <p className="mt-0.5 text-xs text-muted-foreground">{lead.email}</p>
                             )}
                           </td>
-                          <td className="px-4 py-3.5 font-mono text-xs">{lead.phone}</td>
+                          <td className="px-4 py-3.5 font-mono text-xs">{formatPhone(lead.phone)}</td>
                           <td className="hidden px-4 py-3.5 text-muted-foreground md:table-cell">
                             {formatText(lead.company)}
                           </td>
                           <td className="hidden px-4 py-3.5 text-xs text-muted-foreground lg:table-cell">
-                            {lead.callingDate ? `${lead.callingDate} · ${lead.callingTime}` : EMPTY}
+                            {lead.callingDate && lead.callingTime ? `${lead.callingDate} · ${lead.callingTime}` : lead.callingDate || EMPTY}
                           </td>
                           <td className="px-5 py-3.5 text-right">
-                            <div className="flex items-center justify-end gap-1.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                            <div className="flex items-center justify-end gap-1.5 opacity-70 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
                               {lead.suppressed ? (
                                 <span
                                   className="text-xs text-muted-foreground"
@@ -311,6 +326,14 @@ export default function LeadsPage() {
                                   </button>
                                 </>
                               )}
+                              <button
+                                onClick={() => setEditingLead(lead)}
+                                title="Edit lead"
+                                aria-label={`Edit ${lead.name}`}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
                               <button
                                 onClick={() => setPendingAction({ kind: "delete", lead })}
                                 title="Delete lead"
@@ -346,6 +369,17 @@ export default function LeadsPage() {
           onCancel={() => {
             setPendingAction(null);
             setActionError(null);
+          }}
+        />
+      )}
+
+      {editingLead && (
+        <EditLeadDialog
+          lead={editingLead}
+          onClose={() => setEditingLead(null)}
+          onSaved={() => {
+            setEditingLead(null);
+            refresh();
           }}
         />
       )}
@@ -418,8 +452,8 @@ function ConfirmDialog({
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
           {isDelete
-            ? "The lead is removed from the database. Call records for this lead are kept."
-            : "Dialo will refuse to place any further call to this number, and pending callbacks for it are cancelled."}
+            ? "The lead is removed, with its calls, recordings and follow-ups. Customer memory is kept only if another lead has the same number."
+            : "Tringlo will refuse to place any further call to this number, and pending callbacks for it are cancelled."}
         </p>
 
         {error && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{error}</p>}
@@ -440,6 +474,106 @@ function ConfirmDialog({
             {isDelete ? "Delete" : "Mark do not call"}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** "Add name" beside a contact Tringlo has no name for (e.g. an unknown caller). */
+function AddNameButton({ lead, onEdit }: { lead: Lead; onEdit: (lead: Lead) => void }) {
+  if (!isPlaceholderName(lead.name)) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => onEdit(lead)}
+      className="ml-2 rounded px-1.5 py-0.5 align-middle text-[11px] font-medium text-primary transition-colors hover:bg-accent"
+    >
+      Add name
+    </button>
+  );
+}
+
+function EditLeadDialog({ lead, onClose, onSaved }: { lead: Lead; onClose: () => void; onSaved: () => void }) {
+  const { backdropRef, panelRef } = useModalEntrance();
+  const [name, setName] = useState(isPlaceholderName(lead.name) ? "" : lead.name);
+  const [email, setEmail] = useState(lead.email ?? "");
+  const [company, setCompany] = useState(lead.company ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/leads", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: lead.id, name: name.trim(), email: email.trim(), company: company.trim() }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || "The change could not be saved.");
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The change could not be saved.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const input =
+    "w-full h-10 rounded-lg border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+  return (
+    <div
+      ref={backdropRef}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/25 p-4 phone:items-end phone:p-0"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Edit ${lead.name}`}
+    >
+      <div
+        ref={panelRef}
+        className="w-full max-w-sm rounded-xl border bg-card p-6 shadow-xl phone:max-h-[92dvh] phone:max-w-none phone:overflow-y-auto phone:rounded-b-none phone:rounded-t-2xl phone:border-x-0 phone:border-b-0 phone:pb-safe"
+      >
+        <form onSubmit={save}>
+          <h2 className="font-heading text-base font-semibold tracking-tight">Edit contact</h2>
+          <p className="mt-1 font-mono text-xs text-muted-foreground">{formatPhone(lead.phone)}</p>
+
+          <div className="mt-5 space-y-4">
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Name</span>
+              <input value={name} onChange={(event) => setName(event.target.value)} required autoFocus maxLength={60} placeholder="Full name" className={input} />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Email (optional)</span>
+              <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} maxLength={200} className={input} />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Company (optional)</span>
+              <input value={company} onChange={(event) => setCompany(event.target.value)} maxLength={200} className={input} />
+            </label>
+          </div>
+
+          <p className="mt-3 text-xs text-muted-foreground">
+            The new name shows on this contact&apos;s calls and memory, and the AI agent uses it the next time they call.
+          </p>
+          {error && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{error}</p>}
+
+          <div className="mt-6 flex items-center justify-end gap-2">
+            <button type="button" onClick={onClose} className="h-9 rounded-md border px-3.5 text-sm font-medium transition-colors hover:bg-muted">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving || !name.trim()}
+              className="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+            >
+              {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Save
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

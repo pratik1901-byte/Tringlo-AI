@@ -1,3 +1,5 @@
+import { getAllProviderConfigs } from "@/lib/db";
+import { platformProblems } from "@/lib/providers/config";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
@@ -8,11 +10,9 @@ import {
   getWebhookBaseUrl,
   getWebhookDelivery,
 } from "@/lib/db";
-import { sarvamVoiceService } from "@/lib/providers/sarvam";
 import { checkWebhookReachable } from "@/lib/calls/webhook-reachability";
 import { schedulerStatus } from "@/lib/scheduling/scheduler";
 import { outboundCallsBlocked } from "@/lib/calls/place-call";
-import { webhookToken } from "@/lib/security/webhook-auth";
 import { clientKey, rateLimit } from "@/lib/security/rate-limit";
 
 export type CheckState = "ok" | "warn" | "fail";
@@ -64,20 +64,33 @@ export async function GET(request: NextRequest) {
   }
 
   // --- Sarvam configuration ---
-  const sarvam = sarvamVoiceService.getConfigurationStatus();
+  // Health is about the server, so it reports Tringlo's own credentials. Whether
+  // a particular workspace has an agent is that workspace's own business, and
+  // is reported in its Settings.
+  const platform = platformProblems();
   checks.push({
     name: "sarvam",
-    state: sarvam.status === "ready" ? "ok" : "fail",
-    detail: sarvam.status === "ready" ? "Configured." : `Missing: ${sarvam.missing.join(", ")}.`,
+    state: platform.length === 0 ? "ok" : "fail",
+    detail: platform.length === 0 ? "Configured." : platform.join(" "),
   });
 
+  const workspacesConfigured = getAllProviderConfigs().filter((config) => config.outbound).length;
+  checks.push({
+    name: "workspaces",
+    state: "ok",
+    detail: `${workspacesConfigured} workspace${workspacesConfigured === 1 ? "" : "s"} configured for calling.`,
+  });
+
+  const withTelephony = getAllProviderConfigs().filter(
+    (config) => config.outbound?.connectionId && config.outbound?.phoneNumber
+  ).length;
   checks.push({
     name: "telephony",
-    state: sarvam.hasConnectionId && sarvam.hasPhoneNumber ? "ok" : "fail",
+    state: workspacesConfigured === 0 || withTelephony === workspacesConfigured ? "ok" : "fail",
     detail:
-      sarvam.hasConnectionId && sarvam.hasPhoneNumber
-        ? "Connection and caller ID configured."
-        : "Telephony connection or caller ID is not configured.",
+      workspacesConfigured === 0
+        ? "No workspace has been configured for calling yet."
+        : `${withTelephony} of ${workspacesConfigured} configured workspaces have a connection and caller ID.`,
   });
 
   // --- Webhook configuration ---
@@ -95,12 +108,15 @@ export async function GET(request: NextRequest) {
         : "Stable public URL configured.",
   });
 
+  // Every workspace that can receive a webhook has its own token.
+  const tokenedWorkspaces = getAllProviderConfigs().filter((config) => config.webhookToken).length;
   checks.push({
     name: "webhook_auth",
-    state: webhookToken() ? "ok" : "warn",
-    detail: webhookToken()
-      ? "Webhook requires a token."
-      : "Webhook accepts unauthenticated posts. Set DIALO_WEBHOOK_TOKEN once no calls are in flight.",
+    state: tokenedWorkspaces > 0 ? "ok" : "warn",
+    detail:
+      tokenedWorkspaces > 0
+        ? `Webhooks require a workspace token (${tokenedWorkspaces} configured).`
+        : "No workspace has a webhook token yet, so no webhook can be accepted.",
   });
 
   // --- Webhook delivery history ---

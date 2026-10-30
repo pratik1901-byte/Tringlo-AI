@@ -1,5 +1,5 @@
 // ============================================================
-// Dialo AI — Call Lifecycle Service
+// Tringlo AI — Call Lifecycle Service
 // ============================================================
 // The single place where a Sarvam webhook becomes durable state.
 //
@@ -8,11 +8,16 @@
 // no matter which endpoint Sarvam posts to.
 // ============================================================
 
+import { providerConfigFor, resolveCallAgent } from "@/lib/providers/config";
 import {
   fingerprintWebhook,
+  findCampaignRunByProviderId,
+  findInboundSettingsByDeployment,
+  getAgentConfig,
   getCallRecord,
   getFollowUpByExecutedAttempt,
   getCallRecordByAttemptId,
+  getFollowUps,
   getLead,
   hasProcessedWebhook,
   recordWebhookReceipt,
@@ -26,10 +31,20 @@ import { deriveAiStatus, parseSarvamWebhook } from "@/lib/providers/sarvam/webho
 import { prefetchRecordingLater } from "@/lib/recordings";
 import { recordCallInMemory } from "@/lib/memory/service";
 import { syncLeadStatus } from "@/lib/calls/lead-status";
+import { recordForCampaignAttempt } from "@/lib/campaigns/service";
+import { renameLead, statedCustomerName } from "@/lib/customers/rename";
+import { isPlaceholderName } from "@/lib/customers/identity";
+import { inboundCallerName, inboundIntent, inboundResolution } from "@/lib/inbound/outcome";
+import { recordForInboundCall, verifyTransferLater } from "@/lib/inbound/service";
 import { notifyIfInterested } from "@/lib/notifications";
+import { applyReminderCallResult } from "@/lib/hospital/reminder-outcomes";
+import { recordForHospitalReminderAttempt } from "@/lib/hospital/reminder-batch";
 import type { SarvamWebhookPayload } from "@/lib/providers/sarvam/types";
 import type { AICallResult, CallRecord, CallStatus, FollowUp, Lead } from "@/lib/types";
 import { isTerminalCallStatus } from "@/lib/types";
+
+/** How late a requested callback may be and still be placed automatically. */
+const LATE_CALLBACK_GRACE_MS = 10 * 60 * 1000;
 
 export type ApplyOutcome =
   | "applied"
@@ -57,18 +72,17 @@ export interface ApplyResult {
  * today. Falls back to a neutral label rather than a hardcoded persona.
  */
 function agentLabel(record?: CallRecord): string {
-  return (
-    record?.agentName?.trim() ||
-    process.env.SARVAM_AGENT_NAME?.trim() ||
-    "Agent"
-  );
+  if (record?.agentName?.trim()) return record.agentName.trim();
+  const tenantId = record?.tenantId;
+  const configured = tenantId ? providerConfigFor(tenantId)?.outbound?.agentName : null;
+  return configured?.trim() || "Agent";
 }
 
 /**
  * Applies one Sarvam webhook body.
  *
  * Every early return leaves existing state untouched: an unrecognised status, an
- * attempt Dialo never triggered, or a late event arriving after a terminal one
+ * attempt Tringlo never triggered, or a late event arriving after a terminal one
  * are all cases where doing nothing is more honest than writing a guess.
  */
 /** How long to wait before retrying a callback nobody picked up. */
@@ -125,11 +139,29 @@ function closeTriggeredFollowUp(
   return followUp.id;
 }
 
+function tenantForDelivery(rawPayload: SarvamWebhookPayload, attemptId: string): string | null {
+  if (attemptId) {
+    const correlated = getCallRecordByAttemptId(attemptId);
+    if (correlated?.tenantId) return correlated.tenantId;
+  }
+  if (rawPayload?.deployment_id) {
+    return findInboundSettingsByDeployment(rawPayload.deployment_id)?.tenantId ?? null;
+  }
+  if (rawPayload?.campaign_id) {
+    return findCampaignRunByProviderId(rawPayload.campaign_id)?.tenantId ?? null;
+  }
+  return null;
+}
+
 export function applySarvamEvent(rawPayload: SarvamWebhookPayload): ApplyResult {
-  const attemptId = String(rawPayload?.attempt_id || "").trim();
+  // Inbound completions carry no attempt_id; Sarvam uses the interaction id
+  // as the attempt id for them (in its delivery records and retries too).
+  const isInbound = Boolean(rawPayload?.deployment_id && !rawPayload?.campaign_id);
+  const attemptId = String(rawPayload?.attempt_id || (isInbound ? rawPayload?.interaction_id : "") || "").trim();
   const payloadRecord = rawPayload as unknown as Record<string, unknown>;
 
-  saveRawEvent(payloadRecord, attemptId || undefined, String(rawPayload?.status ?? ""));
+  const deliveryTenantId = tenantForDelivery(rawPayload, attemptId);
+  saveRawEvent(payloadRecord, attemptId || undefined, String(rawPayload?.status ?? ""), deliveryTenantId);
   console.log(`WEBHOOK_RECEIVED attempt=${attemptId || "none"} status=${rawPayload?.status ?? "none"}`);
 
   if (!attemptId) {
@@ -178,20 +210,51 @@ export function applySarvamEvent(rawPayload: SarvamWebhookPayload): ApplyResult 
     };
   }
 
-  // Correlate: attempt_id first, then the callId Dialo put in webhook metadata.
-  const existing = correlated || (event.callId ? getCallRecord(event.callId) : undefined);
+  // Correlate: attempt_id first, then the callId Tringlo put in webhook metadata.
+  let existing = correlated || (event.callId ? getCallRecord(event.callId) : undefined);
+
+  // A campaign attempt is created by Sarvam, so its first webhook is the first
+  // Tringlo hears of it. Its record is created here — only for a lead that
+  // belongs to that campaign's workspace — and then handled exactly like any
+  // other call. A redelivery finds this record by attempt id and creates none.
+  if (!existing && rawPayload.campaign_id) {
+    const fresh = recordForCampaignAttempt(rawPayload);
+    if (fresh) {
+      existing = saveCallRecord(fresh);
+      console.log(`CAMPAIGN_ATTEMPT_RECORDED attempt=${attemptId} call=${existing.id} retry=${fresh.retryAttempt ?? 0}`);
+    } else {
+      // Not a platform campaign attempt — it may be one of Maya's hospital
+      // reminder cohorts, matched by campaign id + appointment id. Returns null
+      // for anything else, so platform campaigns are unaffected.
+      const hospital = recordForHospitalReminderAttempt(rawPayload);
+      if (hospital) {
+        existing = saveCallRecord(hospital);
+        console.log(`HOSPITAL_REMINDER_ATTEMPT_RECORDED attempt=${attemptId} call=${existing.id}`);
+      }
+    }
+  }
+
+  // An inbound call is created by the caller, so its completion is the first
+  // Tringlo hears of it. The workspace comes from the deployment that answered.
+  if (!existing && isInbound) {
+    const fresh = recordForInboundCall(rawPayload);
+    if (fresh) {
+      existing = saveCallRecord(fresh);
+      console.log(`INBOUND_CALL_RECORDED interaction=${attemptId} call=${existing.id} lead=${existing.leadId}`);
+    }
+  }
 
   if (!existing) {
     return {
       ...base,
       outcome: "unknown_attempt",
-      detail: `No call record matches attempt ${attemptId}. Not creating one — Dialo did not place this call.`,
+      detail: `No call record matches attempt ${attemptId}. Not creating one — Tringlo did not place this call.`,
     };
   }
 
   // A terminal call does not go backwards. Late duplicates of an earlier state are ignored.
   if (isTerminalCallStatus(existing.status) && existing.status !== event.status) {
-    recordWebhookReceipt(attemptId, fingerprint, event.status);
+    recordWebhookReceipt(attemptId, fingerprint, event.status, existing.tenantId ?? deliveryTenantId);
     return {
       ...base,
       outcome: "stale",
@@ -265,9 +328,63 @@ export function applySarvamEvent(rawPayload: SarvamWebhookPayload): ApplyResult 
     doNotCall: event.doNotCall,
     humanHandoffRequired: event.humanHandoff,
     outputVariables: event.outputVariables,
+    // Inbound calls: why they called and how it ended, as the agent reported it.
+    ...(isInbound
+      ? {
+          direction: "inbound" as const,
+          intent: inboundIntent(event.outputVariables),
+          resolutionStatus: event.humanHandoff
+            ? ("escalated" as const)
+            : inboundResolution(event.outputVariables),
+          inboundNumber: existing.inboundNumber ?? rawPayload.agent_phone_number ?? null,
+        }
+      : {}),
+    // Campaign attempts: what Sarvam's retry engine will do next for this lead.
+    ...(rawPayload.campaign_id
+      ? {
+          providerCohortId: rawPayload.cohort_id ?? existing.providerCohortId ?? null,
+          retryAttempt: rawPayload.retry_attempt ?? existing.retryAttempt ?? 0,
+          nextActionStatus: rawPayload.next_action_status ?? null,
+        }
+      : {}),
   };
 
+  // An inbound caller who was not on file and told the agent their name gets
+  // it on their contact — never over a name the team already has.
+  if (isInbound && connected) {
+    const givenName = inboundCallerName(event.outputVariables);
+    const onFile = getLead(existing.leadId);
+    if (givenName && onFile && isPlaceholderName(onFile.name)) {
+      const renamed = renameLead(onFile.id, givenName, "caller");
+      if (renamed) updated.lead = { ...updated.lead, name: renamed.name };
+    }
+  }
+
+  // What the person said about their own name during this call outranks what
+  // was on file, because they are the authority on it. The agent reports it
+  // only when it differs from what it was given, so this is a correction.
+  //
+  // Read from stated_customer_name alone: customer_name is an input, and an
+  // agent echoes its own default back on that one — which is how a demo name
+  // reached a customer on 9 October 2026.
+  if (connected && !isInbound) {
+    const agentName = existing.tenantId ? getAgentConfig(existing.tenantId)?.agentName ?? null : null;
+    const stated = statedCustomerName(event.outputVariables, agentName);
+    const onFile = getLead(existing.leadId);
+    if (stated && onFile && stated.toLowerCase() !== (onFile.name ?? "").trim().toLowerCase()) {
+      const renamed = renameLead(onFile.id, stated, "customer");
+      if (renamed) {
+        updated.lead = { ...updated.lead, name: renamed.name };
+        console.log(`LEAD_NAME_STATED_BY_CUSTOMER call=${existing.id} lead=${onFile.id}`);
+      }
+    }
+  }
+
   const savedRecord = saveCallRecord(updated);
+
+  // Whether a requested transfer actually happened is in Sarvam's own call
+  // record, not in this webhook. Checked shortly after, then recorded.
+  if (isInbound && connected) verifyTransferLater(savedRecord.id);
 
   // Learn from the conversation, now that the record is authoritative.
   //
@@ -293,7 +410,8 @@ export function applySarvamEvent(rawPayload: SarvamWebhookPayload): ApplyResult 
   // not always ready the moment the call ends, so this retries on its own and
   // does not delay the response to Sarvam.
   if (connected && event.interactionId) {
-    prefetchRecordingLater(event.interactionId);
+    const agent = resolveCallAgent(savedRecord);
+    if (agent) prefetchRecordingLater(event.interactionId, agent);
   }
 
   // If this webhook is the result of a callback the scheduler placed, that
@@ -330,8 +448,39 @@ export function applySarvamEvent(rawPayload: SarvamWebhookPayload): ApplyResult 
 
   if (event.followUp?.required && !event.doNotCall && lead) {
     const now = new Date().toISOString();
+
+    // A result Tringlo learns of late — recovered from Sarvam's records after a
+    // lost webhook — can ask for a time that has already gone. Scheduling it
+    // would dial at once, hours after the customer expected; it is kept for a
+    // person to reschedule instead.
+    const requestedAt = event.followUp.scheduledTime ? new Date(event.followUp.scheduledTime).getTime() : null;
+    const alreadyPassed = requestedAt !== null && requestedAt < Date.now() - LATE_CALLBACK_GRACE_MS;
+    // A contact on the do-not-call list is never dialled automatically — not
+    // even when they themselves called in and asked for a callback. A person
+    // decides.
+    const onDoNotCall = Boolean(getLead(existing.leadId)?.suppressed);
+
+    // The newest request is the one that stands: "call me at 2", then on the
+    // next call "make it 3", leaves one callback at 3, not two.
+    for (const open of getFollowUps()) {
+      if (
+        open.leadId === existing.leadId &&
+        open.id !== `fu_${attemptId}` &&
+        (open.status === "scheduled" || open.status === "needs_scheduling" || open.status === "retry_pending") &&
+        new Date(open.createdAt).getTime() <= new Date(existing.endedAt ?? now).getTime()
+      ) {
+        updateFollowUp(open.id, {
+          status: "cancelled",
+          lastError: `Replaced by a newer callback request on attempt ${attemptId}.`,
+        } as Partial<FollowUp>);
+        console.log(`FOLLOW_UP_SUPERSEDED followUp=${open.id} by=fu_${attemptId}`);
+      }
+    }
+
     const followUp: FollowUp = {
       id: `fu_${attemptId}`,
+      // Owned by the call's workspace, so tenant-scoped lists can see it.
+      tenantId: existing.tenantId ?? lead.tenantId ?? null,
       leadId: existing.leadId,
       lead,
       previousResponse: event.summary,
@@ -340,9 +489,13 @@ export function applySarvamEvent(rawPayload: SarvamWebhookPayload): ApplyResult 
       scheduledTime: event.followUp.scheduledTime,
       timezone: event.followUp.timezone,
       // An exact time schedules itself and the worker will place the call. Anything
-      // vaguer waits for a time to be agreed — Dialo never picks one.
-      status: event.followUp.unparseable ? "needs_scheduling" : "scheduled",
-      interpretation: event.followUp.interpretation,
+      // vaguer waits for a time to be agreed — Tringlo never picks one.
+      status: event.followUp.unparseable || alreadyPassed || onDoNotCall ? "needs_scheduling" : "scheduled",
+      interpretation: onDoNotCall
+        ? `${event.followUp.interpretation} This contact is on the do-not-call list, so the callback was not scheduled automatically.`
+        : alreadyPassed
+        ? `${event.followUp.interpretation} The requested time had already passed when Tringlo received this call's result, so it was not dialled automatically — choose a new time.`
+        : event.followUp.interpretation,
       nextAction: event.followUp.nextAction,
       executionAttempts: 0,
       lockedAt: null,
@@ -358,7 +511,29 @@ export function applySarvamEvent(rawPayload: SarvamWebhookPayload): ApplyResult 
     );
   }
 
-  recordWebhookReceipt(attemptId, fingerprint, event.status);
+  // A hospital confirmation call feeds its result back to the appointment it
+  // was placed for — confirmed, rescheduled, or handed to a person — judged on
+  // the extracted variables the backend validates, never on the agent's spoken
+  // claim. This fires only for a hospital workspace that has a reminder linked
+  // to this call, so every other workspace (TenWeb/Priya included) returns at
+  // once untouched. The confirm and reschedule paths run synchronously here;
+  // only a cancellation request is deferred. It is never allowed to fail the
+  // webhook.
+  applyReminderCallResult(savedRecord)
+    .then((outcome) => {
+      if (outcome.handled) {
+        console.log(
+          `HOSPITAL_REMINDER_OUTCOME call=${savedRecord.id} reminder=${outcome.reminderId} ` +
+            `response=${outcome.response} action="${outcome.action ?? ""}"` +
+            `${outcome.rescheduled ? " rescheduled" : ""}${outcome.followUpId ? ` followUp=${outcome.followUpId}` : ""}`
+        );
+      }
+    })
+    .catch((error) =>
+      console.error(`HOSPITAL_REMINDER_OUTCOME_FAILED call=${savedRecord.id}`, error instanceof Error ? error.message : error)
+    );
+
+  recordWebhookReceipt(attemptId, fingerprint, event.status, savedRecord.tenantId ?? deliveryTenantId);
 
   return {
     ...base,
