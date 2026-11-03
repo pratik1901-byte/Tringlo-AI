@@ -297,6 +297,13 @@ function emptyDb(): DatabaseSchema {
 
 declare global {
   var __tringloDatabaseCache: DatabaseSchema | undefined;
+  // On globalThis, not module scope: Next.js may load this module in more than
+  // one instance (instrumentation vs. route handlers), and the flush gate must
+  // be the SAME across all of them — otherwise a route's write sees "not loaded"
+  // and silently skips persisting to the external store.
+  var __tringloBlobLoaded: boolean | undefined;
+  var __tringloBlobFlushing: boolean | undefined;
+  var __tringloBlobDirty: boolean | undefined;
 }
 
 function ensureDataDir() {
@@ -420,26 +427,22 @@ function writeDb(data: DatabaseSchema) {
 // External blob persistence (enabled only when a store is configured)
 // ------------------------------------------------------------
 
-let blobLoaded = false;
-let flushing = false;
-let flushDirty = false;
-
 /** Flush the whole database to the external store, coalescing rapid writes. */
 function scheduleBlobFlush(): void {
-  if (!blobLoaded || !isBlobConfigured()) return;
-  flushDirty = true;
-  if (flushing) return;
-  flushing = true;
+  if (!globalThis.__tringloBlobLoaded || !isBlobConfigured()) return;
+  globalThis.__tringloBlobDirty = true;
+  if (globalThis.__tringloBlobFlushing) return;
+  globalThis.__tringloBlobFlushing = true;
   void (async () => {
     try {
       do {
-        flushDirty = false;
+        globalThis.__tringloBlobDirty = false;
         await saveBlob(JSON.stringify(globalThis.__tringloDatabaseCache));
-      } while (flushDirty);
+      } while (globalThis.__tringloBlobDirty);
     } catch (err) {
       console.error("[Database] blob flush failed:", err instanceof Error ? err.message : err);
     } finally {
-      flushing = false;
+      globalThis.__tringloBlobFlushing = false;
     }
   })();
 }
@@ -450,7 +453,7 @@ function scheduleBlobFlush(): void {
  * Call this from instrumentation before migrations run.
  */
 export async function initDatabase(): Promise<void> {
-  if (!isBlobConfigured() || blobLoaded) return;
+  if (!isBlobConfigured() || globalThis.__tringloBlobLoaded) return;
   try {
     const raw = await loadBlob();
     if (raw) {
@@ -460,13 +463,13 @@ export async function initDatabase(): Promise<void> {
     } else {
       // First boot against an empty store: seed it with whatever is local.
       const current = readDb();
-      blobLoaded = true;
+      globalThis.__tringloBlobLoaded = true;
       await saveBlob(JSON.stringify(current));
       console.log(`[Database] seeded external store (${blobTarget()})`);
       registerBlobShutdownFlush();
       return;
     }
-    blobLoaded = true;
+    globalThis.__tringloBlobLoaded = true;
     registerBlobShutdownFlush();
   } catch (err) {
     // A store that cannot be reached must not take the whole app down; fall
