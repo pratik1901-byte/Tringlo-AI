@@ -71,7 +71,7 @@ export interface MailMessage {
  */
 function inlineImages(html: string) {
   if (!html.includes(`cid:${HEADER_LOGO.cid}`)) return undefined;
-  const file = path.join(process.cwd(), HEADER_LOGO.file);
+  const file = path.join(/*turbopackIgnore: true*/ process.cwd(), HEADER_LOGO.file);
   if (!existsSync(file)) return undefined;
   return [{ filename: "tringlo-ai.png", path: file, cid: HEADER_LOGO.cid, contentDisposition: "inline" as const }];
 }
