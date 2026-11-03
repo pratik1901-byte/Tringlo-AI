@@ -20,7 +20,11 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { isStandardMp3, wavToMp3 } from "@/lib/recordings/mp3";
+import { getObject, isObjectStoreConfigured, putObject } from "@/lib/storage/object-store";
 import type { PlatformCredentials } from "@/lib/providers/types";
+
+/** Where a call's recording lives in object storage. */
+const recordingObjectKey = (interactionId: string) => `recordings/${encodeURIComponent(interactionId)}.mp3`;
 
 const RECORDINGS_DIR = path.join(process.cwd(), "data", "recordings");
 const SARVAM_ANALYTICS = "https://apps.sarvam.ai/api/analytics/v1";
@@ -200,6 +204,20 @@ export async function getRecordingAsMp3(interactionId: string, agent: CallAgent)
   const cached = readSavedMp3(interactionId);
   if (cached) return { ok: true, audio: cached, source: "cache" };
 
+  // The durable copy. On a disk-less host the local cache above is wiped on
+  // restart, so object storage is where a once-encoded recording survives —
+  // served straight back without re-fetching from the provider.
+  if (isObjectStoreConfigured()) {
+    try {
+      const fromStore = await getObject(recordingObjectKey(interactionId));
+      if (fromStore && fromStore.length > 0 && isStandardMp3(fromStore)) {
+        return { ok: true, audio: fromStore, source: "cache" };
+      }
+    } catch (error: unknown) {
+      console.error("RECORDING_S3_READ_FAILED", error instanceof Error ? error.message : error);
+    }
+  }
+
   const source = await fetchRecording(interactionId, agent);
   if (!source.ok) return source;
 
@@ -226,6 +244,15 @@ export async function getRecordingAsMp3(interactionId: string, agent: CallAgent)
     );
   } catch (error: unknown) {
     console.error("RECORDING_MP3_SAVE_FAILED", error instanceof Error ? error.message : error);
+  }
+
+  // Persist to object storage so it survives a disk-less host's restart. Not
+  // awaited — the audio is already being returned, and a store hiccup must not
+  // fail playback.
+  if (isObjectStoreConfigured()) {
+    void putObject(recordingObjectKey(interactionId), encoded.mp3, "audio/mpeg").catch((error: unknown) =>
+      console.error("RECORDING_S3_SAVE_FAILED", error instanceof Error ? error.message : error)
+    );
   }
 
   return { ok: true, audio: encoded.mp3, source: "encoded" };

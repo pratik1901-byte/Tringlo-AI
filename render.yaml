@@ -39,6 +39,18 @@ services:
         sync: false
       - key: TRINGLO_DB_REST_TOKEN
         sync: false
+      # Object storage (S3-compatible, e.g. Neon Object Storage) for call
+      # recordings — so they survive the disk-less free host. Optional.
+      - key: AWS_ENDPOINT_URL_S3
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        sync: false
+      - key: TRINGLO_S3_BUCKET
+        sync: false
       # Sarvam — set in the dashboard, never in Git.
       - key: SARVAM_API_KEY
         sync: false
