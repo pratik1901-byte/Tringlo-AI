@@ -78,6 +78,8 @@ export interface Doctor {
   avatar?: string | null;
   phone?: string | null;
   email?: string | null;
+  /** Consultation fee in INR. Null when the hospital has not entered one. */
+  consultationFee?: number | null;
   schedule: DoctorSchedule;
   exceptions: ScheduleException[];
   /** Archived doctors keep their history and take no new bookings. */

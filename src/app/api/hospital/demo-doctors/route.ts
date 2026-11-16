@@ -14,7 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireHospitalAuth } from "@/lib/hospital/guard";
 import { deleteDoctor, getDoctor, saveDoctor } from "@/lib/db";
 import { refreshProviderDirectory } from "@/lib/hospital/directory";
-import { DEMO_DOCTORS, demoDoctorId, isDemoDoctorId, listDemoDoctors, seedDemoDoctors } from "@/lib/hospital/demo-doctors";
+import { DEMO_DOCTORS, demoDoctorId, listDemoDoctors, seedDemoDoctors } from "@/lib/hospital/demo-doctors";
 import { audit } from "@/lib/hospital/service";
 import type { Doctor, ScheduleException, Weekday } from "@/lib/hospital/types";
 
@@ -56,6 +56,7 @@ export async function POST(request: NextRequest) {
       specialty: String(body?.specialty ?? "General Medicine"),
       department: body?.department ? String(body.department) : null,
       qualifications: null, about: "Demonstration doctor — not a real member of staff.", avatar: null, phone: null, email: null,
+      consultationFee: Number.isFinite(body?.consultationFee) ? Math.max(0, Number(body.consultationFee)) : null,
       schedule: { days, start, end, slotMinutes, breaks: [] },
       exceptions: [], status: "active", demo: true, createdAt: now, updatedAt: now,
     } as Doctor);
@@ -114,7 +115,8 @@ export async function PUT(request: NextRequest) {
     ...doctor,
     name: typeof body?.name === "string" && body.name.trim() ? body.name.trim() : doctor.name,
     specialty: typeof body?.specialty === "string" && body.specialty.trim() ? body.specialty.trim() : doctor.specialty,
-    department: typeof body?.department === "string" ? body.department : doctor.department,
+    department: typeof body?.department === "string" ? body.department.trim() || null : doctor.department,
+    consultationFee: body?.consultationFee !== undefined ? (Number.isFinite(body.consultationFee) ? Math.max(0, Number(body.consultationFee)) : null) : doctor.consultationFee,
     schedule,
     updatedAt: new Date().toISOString(),
   });
@@ -138,7 +140,7 @@ export async function DELETE(request: NextRequest) {
 
 /** Only a demo doctor in this workspace may be touched here. */
 function guardDemoDoctor(tenantId: string, id: string): Doctor | null {
-  if (!id || !isDemoDoctorId(id)) return null;
+  if (!id) return null;
   const doctor = getDoctor(tenantId, id);
   return doctor && doctor.demo ? doctor : null;
 }

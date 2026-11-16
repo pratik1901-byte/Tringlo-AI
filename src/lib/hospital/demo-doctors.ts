@@ -34,6 +34,7 @@ interface DemoSpec {
   start: string;
   end: string;
   slotMinutes: number;
+  consultationFee: number;
 }
 
 /**
@@ -42,11 +43,11 @@ interface DemoSpec {
  * shown with a DEMO tag) and are never mistaken for real staff.
  */
 export const DEMO_DOCTORS: DemoSpec[] = [
-  { key: "a", name: "Dr. Rhea Sharma", specialty: "General Medicine", department: "Medicine", start: "09:00", end: "17:00", slotMinutes: 20 },
-  { key: "b", name: "Dr. Arjun Nair", specialty: "Cardiology", department: "Cardiac Sciences", start: "10:00", end: "16:00", slotMinutes: 30 },
-  { key: "c", name: "Dr. Kavya Reddy", specialty: "Dermatology", department: "Skin & Aesthetics", start: "11:00", end: "17:00", slotMinutes: 20 },
-  { key: "d", name: "Dr. Vivaan Malhotra", specialty: "Orthopedics", department: "Orthopedics", start: "09:30", end: "16:30", slotMinutes: 30 },
-  { key: "e", name: "Dr. Sara Thomas", specialty: "Pediatrics", department: "Child Health", start: "09:00", end: "15:00", slotMinutes: 20 },
+  { key: "a", name: "Dr. Rhea Sharma", specialty: "General Medicine", department: "Medicine", start: "09:00", end: "17:00", slotMinutes: 20, consultationFee: 500 },
+  { key: "b", name: "Dr. Arjun Nair", specialty: "Cardiology", department: "Cardiac Sciences", start: "10:00", end: "16:00", slotMinutes: 30, consultationFee: 1200 },
+  { key: "c", name: "Dr. Kavya Reddy", specialty: "Dermatology", department: "Skin & Aesthetics", start: "11:00", end: "17:00", slotMinutes: 20, consultationFee: 800 },
+  { key: "d", name: "Dr. Vivaan Malhotra", specialty: "Orthopedics", department: "Orthopedics", start: "09:30", end: "16:30", slotMinutes: 30, consultationFee: 1000 },
+  { key: "e", name: "Dr. Sara Thomas", specialty: "Pediatrics", department: "Child Health", start: "09:00", end: "15:00", slotMinutes: 20, consultationFee: 600 },
 ];
 
 export function demoDoctorId(tenantId: string, key: string): string {
@@ -68,7 +69,12 @@ export function seedDemoDoctors(tenantId: string): { created: number; ids: strin
   for (const spec of DEMO_DOCTORS) {
     const id = demoDoctorId(tenantId, spec.key);
     ids.push(id);
-    if (getDoctor(tenantId, id)) continue; // preserve edits; never duplicate
+    const existing = getDoctor(tenantId, id);
+    if (existing) {
+      // Preserve edits; never duplicate. Only a fee nobody has ever set is filled.
+      if (existing.consultationFee === undefined) saveDoctor({ ...existing, consultationFee: spec.consultationFee });
+      continue;
+    }
     saveDoctor({
       id,
       tenantId,
@@ -80,6 +86,7 @@ export function seedDemoDoctors(tenantId: string): { created: number; ids: strin
       avatar: null,
       phone: null,
       email: null,
+      consultationFee: spec.consultationFee,
       schedule: { days: ALL_DAYS, start: spec.start, end: spec.end, slotMinutes: spec.slotMinutes, breaks: [{ start: "13:00", end: "14:00" }] },
       exceptions: [],
       status: "active",
@@ -97,6 +104,7 @@ export interface DemoDoctorView {
   name: string;
   specialty: string;
   department: string | null;
+  consultationFee: number | null;
   days: Weekday[];
   hours: { start: string; end: string };
   slotMinutes: number;
@@ -120,7 +128,7 @@ function daysThroughSunday(tenantId: string): string[] {
 
 export function listDemoDoctors(tenantId: string): DemoDoctorView[] {
   return getDoctors(tenantId)
-    .filter((d) => d.demo && isDemoDoctorId(d.id))
+    .filter((d) => d.demo)
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((d) => {
       const week = daysThroughSunday(tenantId).map((date) => {
@@ -137,6 +145,7 @@ export function listDemoDoctors(tenantId: string): DemoDoctorView[] {
         name: d.name,
         specialty: d.specialty,
         department: d.department ?? null,
+        consultationFee: d.consultationFee ?? null,
         days: d.schedule.days,
         hours: { start: d.schedule.start, end: d.schedule.end },
         slotMinutes: d.schedule.slotMinutes,

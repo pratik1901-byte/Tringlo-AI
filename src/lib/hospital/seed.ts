@@ -33,6 +33,7 @@
 
 import {
   getAppointments,
+  getDoctor,
   getDoctors,
   getHisPatients,
   getHospitalFaqs,
@@ -40,7 +41,7 @@ import {
   saveHisPatient,
   saveHospitalFaq,
 } from "@/lib/db";
-import { bookAppointment, hospitalProfile, localDate, patientFor, slotsFor } from "./service";
+import { bookAppointment, hospitalProfile, localDate, patientFor, slotsFor, updateHospitalProfile } from "./service";
 import { defaultSchedule, type Doctor, type Weekday } from "./types";
 
 interface SeedDoctor {
@@ -52,6 +53,7 @@ interface SeedDoctor {
   start: string;
   end: string;
   slotMinutes: number;
+  consultationFee: number;
 }
 
 const WEEK: Weekday[] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
@@ -59,26 +61,26 @@ const WITH_SAT: Weekday[] = [...WEEK, "Saturday"];
 
 /** Twenty fictional doctors, with schedules a hospital can edit or remove. */
 const DOCTORS: SeedDoctor[] = [
-  { slug: "aarav-mehta", name: "Dr. Aarav Mehta", specialty: "General Medicine", department: "Medicine", days: WITH_SAT, start: "09:00", end: "17:00", slotMinutes: 20 },
-  { slug: "nisha-rao", name: "Dr. Nisha Rao", specialty: "Cardiology", department: "Cardiac Sciences", days: WEEK, start: "10:00", end: "16:00", slotMinutes: 30 },
-  { slug: "kabir-shah", name: "Dr. Kabir Shah", specialty: "Neurology", department: "Neurosciences", days: ["Monday", "Wednesday", "Friday"], start: "11:00", end: "17:00", slotMinutes: 30 },
-  { slug: "meera-nair", name: "Dr. Meera Nair", specialty: "Pediatrics", department: "Child Health", days: WITH_SAT, start: "09:00", end: "15:00", slotMinutes: 20 },
-  { slug: "rohan-kulkarni", name: "Dr. Rohan Kulkarni", specialty: "Orthopedics", department: "Orthopedics", days: WEEK, start: "10:00", end: "18:00", slotMinutes: 30 },
-  { slug: "ananya-iyer", name: "Dr. Ananya Iyer", specialty: "Obstetrics & Gynecology", department: "Women's Health", days: WEEK, start: "09:30", end: "16:30", slotMinutes: 30 },
-  { slug: "vikram-desai", name: "Dr. Vikram Desai", specialty: "Dermatology", department: "Skin & Aesthetics", days: ["Tuesday", "Thursday", "Saturday"], start: "11:00", end: "17:00", slotMinutes: 20 },
-  { slug: "farah-khan", name: "Dr. Farah Khan", specialty: "ENT", department: "ENT", days: WEEK, start: "09:00", end: "15:00", slotMinutes: 20 },
-  { slug: "arjun-menon", name: "Dr. Arjun Menon", specialty: "Gastroenterology", department: "Digestive Health", days: ["Monday", "Tuesday", "Thursday", "Friday"], start: "10:00", end: "16:00", slotMinutes: 30 },
-  { slug: "sneha-patil", name: "Dr. Sneha Patil", specialty: "Pulmonology", department: "Respiratory Medicine", days: WEEK, start: "09:00", end: "16:00", slotMinutes: 30 },
-  { slug: "karthik-reddy", name: "Dr. Karthik Reddy", specialty: "Endocrinology & Diabetology", department: "Medicine", days: WEEK, start: "10:00", end: "17:00", slotMinutes: 20 },
-  { slug: "pooja-bhat", name: "Dr. Pooja Bhat", specialty: "Nephrology", department: "Renal Sciences", days: ["Monday", "Wednesday", "Friday"], start: "09:00", end: "15:00", slotMinutes: 30 },
-  { slug: "aditya-bose", name: "Dr. Aditya Bose", specialty: "Urology", department: "Renal Sciences", days: ["Tuesday", "Thursday", "Saturday"], start: "10:00", end: "16:00", slotMinutes: 30 },
-  { slug: "leena-thomas", name: "Dr. Leena Thomas", specialty: "Psychiatry", department: "Mental Health", days: WEEK, start: "11:00", end: "18:00", slotMinutes: 45 },
-  { slug: "sanjay-kapoor", name: "Dr. Sanjay Kapoor", specialty: "Ophthalmology", department: "Eye Care", days: WITH_SAT, start: "09:00", end: "16:00", slotMinutes: 20 },
-  { slug: "divya-shetty", name: "Dr. Divya Shetty", specialty: "Oncology", department: "Cancer Care", days: ["Monday", "Tuesday", "Wednesday", "Thursday"], start: "10:00", end: "16:00", slotMinutes: 45 },
-  { slug: "rahul-verma", name: "Dr. Rahul Verma", specialty: "Dentistry & Oral Health", department: "Dental", days: WITH_SAT, start: "09:30", end: "17:30", slotMinutes: 30 },
-  { slug: "isha-banerjee", name: "Dr. Isha Banerjee", specialty: "Rheumatology", department: "Medicine", days: ["Tuesday", "Wednesday", "Friday"], start: "10:00", end: "15:00", slotMinutes: 30 },
-  { slug: "manish-gowda", name: "Dr. Manish Gowda", specialty: "Physiotherapy & Rehabilitation", department: "Rehabilitation", days: WITH_SAT, start: "08:00", end: "14:00", slotMinutes: 45 },
-  { slug: "zoya-fernandes", name: "Dr. Zoya Fernandes", specialty: "Emergency Medicine", department: "Emergency", days: WEEK, start: "08:00", end: "20:00", slotMinutes: 20 },
+  { slug: "aarav-mehta", name: "Dr. Aarav Mehta", specialty: "General Medicine", department: "Medicine", days: WITH_SAT, start: "09:00", end: "17:00", slotMinutes: 20, consultationFee: 500 },
+  { slug: "nisha-rao", name: "Dr. Nisha Rao", specialty: "Cardiology", department: "Cardiac Sciences", days: WEEK, start: "10:00", end: "16:00", slotMinutes: 30, consultationFee: 1200 },
+  { slug: "kabir-shah", name: "Dr. Kabir Shah", specialty: "Neurology", department: "Neurosciences", days: ["Monday", "Wednesday", "Friday"], start: "11:00", end: "17:00", slotMinutes: 30, consultationFee: 1500 },
+  { slug: "meera-nair", name: "Dr. Meera Nair", specialty: "Pediatrics", department: "Child Health", days: WITH_SAT, start: "09:00", end: "15:00", slotMinutes: 20, consultationFee: 600 },
+  { slug: "rohan-kulkarni", name: "Dr. Rohan Kulkarni", specialty: "Orthopedics", department: "Orthopedics", days: WEEK, start: "10:00", end: "18:00", slotMinutes: 30, consultationFee: 1000 },
+  { slug: "ananya-iyer", name: "Dr. Ananya Iyer", specialty: "Obstetrics & Gynecology", department: "Women's Health", days: WEEK, start: "09:30", end: "16:30", slotMinutes: 30, consultationFee: 1000 },
+  { slug: "vikram-desai", name: "Dr. Vikram Desai", specialty: "Dermatology", department: "Skin & Aesthetics", days: ["Tuesday", "Thursday", "Saturday"], start: "11:00", end: "17:00", slotMinutes: 20, consultationFee: 800 },
+  { slug: "farah-khan", name: "Dr. Farah Khan", specialty: "ENT", department: "ENT", days: WEEK, start: "09:00", end: "15:00", slotMinutes: 20, consultationFee: 700 },
+  { slug: "arjun-menon", name: "Dr. Arjun Menon", specialty: "Gastroenterology", department: "Digestive Health", days: ["Monday", "Tuesday", "Thursday", "Friday"], start: "10:00", end: "16:00", slotMinutes: 30, consultationFee: 1100 },
+  { slug: "sneha-patil", name: "Dr. Sneha Patil", specialty: "Pulmonology", department: "Respiratory Medicine", days: WEEK, start: "09:00", end: "16:00", slotMinutes: 30, consultationFee: 1000 },
+  { slug: "karthik-reddy", name: "Dr. Karthik Reddy", specialty: "Endocrinology & Diabetology", department: "Medicine", days: WEEK, start: "10:00", end: "17:00", slotMinutes: 20, consultationFee: 900 },
+  { slug: "pooja-bhat", name: "Dr. Pooja Bhat", specialty: "Nephrology", department: "Renal Sciences", days: ["Monday", "Wednesday", "Friday"], start: "09:00", end: "15:00", slotMinutes: 30, consultationFee: 1200 },
+  { slug: "aditya-bose", name: "Dr. Aditya Bose", specialty: "Urology", department: "Renal Sciences", days: ["Tuesday", "Thursday", "Saturday"], start: "10:00", end: "16:00", slotMinutes: 30, consultationFee: 1100 },
+  { slug: "leena-thomas", name: "Dr. Leena Thomas", specialty: "Psychiatry", department: "Mental Health", days: WEEK, start: "11:00", end: "18:00", slotMinutes: 45, consultationFee: 1500 },
+  { slug: "sanjay-kapoor", name: "Dr. Sanjay Kapoor", specialty: "Ophthalmology", department: "Eye Care", days: WITH_SAT, start: "09:00", end: "16:00", slotMinutes: 20, consultationFee: 800 },
+  { slug: "divya-shetty", name: "Dr. Divya Shetty", specialty: "Oncology", department: "Cancer Care", days: ["Monday", "Tuesday", "Wednesday", "Thursday"], start: "10:00", end: "16:00", slotMinutes: 45, consultationFee: 2000 },
+  { slug: "rahul-verma", name: "Dr. Rahul Verma", specialty: "Dentistry & Oral Health", department: "Dental", days: WITH_SAT, start: "09:30", end: "17:30", slotMinutes: 30, consultationFee: 700 },
+  { slug: "isha-banerjee", name: "Dr. Isha Banerjee", specialty: "Rheumatology", department: "Medicine", days: ["Tuesday", "Wednesday", "Friday"], start: "10:00", end: "15:00", slotMinutes: 30, consultationFee: 1000 },
+  { slug: "manish-gowda", name: "Dr. Manish Gowda", specialty: "Physiotherapy & Rehabilitation", department: "Rehabilitation", days: WITH_SAT, start: "08:00", end: "14:00", slotMinutes: 45, consultationFee: 600 },
+  { slug: "zoya-fernandes", name: "Dr. Zoya Fernandes", specialty: "Emergency Medicine", department: "Emergency", days: WEEK, start: "08:00", end: "20:00", slotMinutes: 20, consultationFee: 800 },
 ];
 
 /**
@@ -97,9 +99,15 @@ const PATIENTS = [
   { name: "Meera Iyer", phone: "+919822233344", dateOfBirth: "1968-01-30", inDirectory: true, hasHistory: false },
   { name: "Arjun Nair", phone: "+919833344455", dateOfBirth: "2001-09-14", inDirectory: true, hasHistory: false },
   { name: "Divya Menon", phone: "+919844455566", dateOfBirth: "1990-03-05", inDirectory: true, hasHistory: false },
-  // Not in the hospital's directory: these two are new patients.
+  { name: "Priya Deshmukh", phone: "+919877788899", dateOfBirth: "1975-08-22", inDirectory: true, hasHistory: true },
+  { name: "Suresh Gupta", phone: "+919888899900", dateOfBirth: "1960-02-14", inDirectory: true, hasHistory: true },
+  { name: "Neha Sharma", phone: "+919899900011", dateOfBirth: "1988-11-30", inDirectory: true, hasHistory: false },
+  { name: "Ramesh Patel", phone: "+919900011122", dateOfBirth: "1955-05-17", inDirectory: true, hasHistory: false },
+  // Not in the hospital's directory: these are new patients.
   { name: "Vikram Joshi", phone: "+919855566677", dateOfBirth: "1983-12-19", inDirectory: false, hasHistory: false },
   { name: "Sneha Kulkarni", phone: "+919866677788", dateOfBirth: "1997-06-08", inDirectory: false, hasHistory: false },
+  { name: "Aisha Siddiqui", phone: "+919911122233", dateOfBirth: "2000-01-25", inDirectory: false, hasHistory: false },
+  { name: "Ravi Kumar", phone: "+919922233344", dateOfBirth: "1992-07-03", inDirectory: false, hasHistory: false },
 ];
 
 const FAQS = [
@@ -140,7 +148,16 @@ export function seedHospital(tenantId: string): SeedReport {
 
   for (const entry of DOCTORS) {
     const id = seedId(tenantId, "doc", entry.slug);
-    if (existingDoctors.has(id)) continue;
+    if (existingDoctors.has(id)) {
+      // Never edits a record somebody has touched — but a fee that has never
+      // been set at all is filled, so a hospital seeded before fees existed
+      // gets them.
+      const current = getDoctor(tenantId, id);
+      if (current && current.consultationFee === undefined) {
+        saveDoctor({ ...current, consultationFee: entry.consultationFee });
+      }
+      continue;
+    }
     const doctor: Doctor = {
       id,
       tenantId,
@@ -154,6 +171,7 @@ export function seedHospital(tenantId: string): SeedReport {
       avatar: `/hospital/doctors/${entry.slug}.svg`,
       phone: null,
       email: null,
+      consultationFee: entry.consultationFee,
       schedule: {
         ...defaultSchedule(),
         days: entry.days,
@@ -246,6 +264,19 @@ export function seedHospital(tenantId: string): SeedReport {
       });
       if (booked.ok) report.appointments += 1;
     });
+  }
+
+  // Fill in the hospital's public details when they are still empty.
+  if (!profile.address) {
+    updateHospitalProfile(tenantId, {
+      address: "42, MG Road, Indiranagar, Bengaluru, Karnataka 560038",
+      helpline: "+91 80 4567 8900",
+      email: "reception@wellnesshospital.in",
+      website: "https://www.wellnesshospital.in",
+      staffContact: "Front Desk — ext. 100",
+      escalationProtocol: "If the caller describes chest pain, difficulty breathing, loss of consciousness, heavy bleeding or any symptom that sounds immediately dangerous, stop the conversation. Tell them to call 108 (ambulance) or come to the Emergency department at once. Do not attempt to triage or reassure.",
+      notes: "Wellness Hospital is a multi-specialty facility open Monday to Saturday, 09:00–18:00 IST. Emergency services are available 24/7. Pharmacy on ground floor. Free parking available for patients. Wheelchair access at all entrances.",
+    }, "seed");
   }
 
   report.alreadyPresent =

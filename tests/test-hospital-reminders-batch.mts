@@ -197,6 +197,27 @@ section("Batch result maps back to the correct appointment");
 
 const target = eligibleForBatch[0];
 const targetAppt = db.getAppointment(HOSPITAL, target.appointmentId)!;
+
+// Only the agent's claim, no backend verification: must change nothing.
+const claimOnly = eligibleForBatch[1];
+applySarvamEvent({
+  attempt_id: "att_batch_claim_only",
+  campaign_id: batch.campaignId!,
+  cohort_id: batch.cohortId!,
+  user_identifier: claimOnly.appointmentId,
+  user_phone_number: db.getAppointment(HOSPITAL, claimOnly.appointmentId)!.patientPhone,
+  connectivity_status: "connected",
+  completion_status: "completed",
+  final_agent_variables: { identity_verified: "true", appointment_confirmation_status: "confirmed", attendance_status: "attending" },
+} as never);
+check("A campaign result that only CLAIMS identity confirms nothing", db.getAppointment(HOSPITAL, claimOnly.appointmentId)?.status !== "confirmed");
+
+// The patient really verifies on the call, through Maya's tool.
+const { runAgentTool } = await import("@/lib/hospital/agent-tools");
+db.saveHisPatient({ id: "hisp_batch_target", tenantId: HOSPITAL, patientId: "WH-BATCH1", name: targetAppt.patientName, phone: targetAppt.patientPhone, dateOfBirth: "1979-03-03", hasHistory: false, demo: true, createdAt: new Date().toISOString() } as never);
+const batchVerified = await runAgentTool(HOSPITAL, "verify_patient", { patient_phone: targetAppt.patientPhone, date_of_birth: "1979-03-03" });
+check("The patient verifies during the campaign call", batchVerified.ok === true, batchVerified);
+
 applySarvamEvent({
   attempt_id: "att_batch_1",
   campaign_id: batch.campaignId!,

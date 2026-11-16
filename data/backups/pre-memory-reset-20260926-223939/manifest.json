@@ -1,0 +1,35 @@
+{
+  "createdAt": "2026-09-26T22:39:40.041528",
+  "reason": "Development/test customer data cleared before the production memory system.",
+  "databaseSha256": "48bbdc7e316fa2fffd3a2c9a30a6ea62d9d9f2488333d34057bd5322cfc1ed01",
+  "counts": {
+    "leads": 31,
+    "callRecords": 50,
+    "followUps": 17,
+    "rawEvents": 43,
+    "webhookReceipts": 36,
+    "agentConfig": "set",
+    "callingWindow": "null",
+    "webhookBaseUrl": "set",
+    "webhookDelivery": "set",
+    "tenants": 1,
+    "users": 1,
+    "sessions": 2,
+    "legacyTenantId": "set",
+    "customerProfiles": 5,
+    "memoryItems": 9,
+    "passwordResets": 1,
+    "notificationSettings": 1
+  },
+  "recordingsMoved": 37,
+  "cleared": [
+    "leads",
+    "callRecords",
+    "followUps",
+    "rawEvents",
+    "webhookReceipts",
+    "customerProfiles",
+    "memoryItems",
+    "passwordResets"
+  ]
+}

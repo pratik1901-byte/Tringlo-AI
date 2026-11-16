@@ -1,0 +1,126 @@
+{
+  "_comment": "Exact Sarvam identifiers applied at startup (2026-10-28). Each section is MERGED onto the saved config, so agent variables, mappings, retry rules, schedules and existing deployment IDs are preserved. Only the fields listed here are changed. Delete this file to stop re-applying. Nothing here is a credential.",
+  "workspaces": {
+    "tenant_1790143786482_2lzjp2": {
+      "_name": "TenWeb / Priya",
+      "outbound": {
+        "appId": "Conversatio-834500dd-d3c1",
+        "appVersion": 4,
+        "connectionId": "8800e72c-9c-8f9c2a3f-4876",
+        "phoneNumber": "+918064269194"
+      },
+      "batch": {
+        "appId": "Conversatio-834500dd-d3c1",
+        "appVersion": 4,
+        "connectionId": "8800e72c-9c-8f9c2a3f-4876",
+        "phoneNumbers": [
+          "+918064269194"
+        ]
+      },
+      "inbound": {
+        "appId": "Conversatio-834500dd-d3c1",
+        "appVersion": 11,
+        "connectionId": "8800e72c-9c-8f9c2a3f-4876"
+      }
+    },
+    "tenant_1792938564756_qe17wn": {
+      "_name": "Wellness Hospital / Maya — app version 6 for outbound, campaign and inbound (2026-11-16)",
+      "_agentVariablesNote": "The 36 variable NAMES Maya's version-5 app declares (from Sarvam's instant-outbound example). Tringlo sends values only for the 15 appointment-reminder inputs it fills; the rest are Maya's own output variables, read back after the call and never sent. Version 5 must be published in Sarvam with the hospital tools on it.",
+      "outbound": {
+        "appId": "Amrita---We-4517816a-a47a",
+        "appVersion": 6,
+        "connectionId": "8800e72c-9c-8f9c2a3f-4876",
+        "phoneNumber": "+918064269489",
+        "agentVariables": [
+          "appointment_confirmation_status",
+          "appointment_date",
+          "appointment_id",
+          "appointment_status",
+          "appointment_time",
+          "attendance_status",
+          "available_slots",
+          "call_disposition",
+          "call_id",
+          "call_summary",
+          "communication_consent",
+          "department_name",
+          "doctor_name",
+          "follow_up_required",
+          "hospital_address",
+          "hospital_name",
+          "human_handoff_requested",
+          "identity_verified",
+          "new_appointment_date",
+          "new_appointment_time",
+          "next_action",
+          "opt_out_requested",
+          "patient_first_name",
+          "patient_id",
+          "patient_name",
+          "patient_phone",
+          "patient_response",
+          "preferred_language",
+          "preferred_reschedule_date",
+          "preferred_reschedule_time",
+          "reminder_type",
+          "reschedule_requested",
+          "reschedule_status",
+          "selected_slot_id",
+          "timezone",
+          "verification_id"
+        ]
+      },
+      "batch": {
+        "appId": "Amrita---We-4517816a-a47a",
+        "appVersion": 6,
+        "connectionId": "8800e72c-9c-8f9c2a3f-4876",
+        "phoneNumbers": [
+          "+918064269489"
+        ],
+        "agentVariables": [
+          "appointment_confirmation_status",
+          "appointment_date",
+          "appointment_id",
+          "appointment_status",
+          "appointment_time",
+          "attendance_status",
+          "available_slots",
+          "call_disposition",
+          "call_id",
+          "call_summary",
+          "communication_consent",
+          "department_name",
+          "doctor_name",
+          "follow_up_required",
+          "hospital_address",
+          "hospital_name",
+          "human_handoff_requested",
+          "identity_verified",
+          "new_appointment_date",
+          "new_appointment_time",
+          "next_action",
+          "opt_out_requested",
+          "patient_first_name",
+          "patient_id",
+          "patient_name",
+          "patient_phone",
+          "patient_response",
+          "preferred_language",
+          "preferred_reschedule_date",
+          "preferred_reschedule_time",
+          "reminder_type",
+          "reschedule_requested",
+          "reschedule_status",
+          "selected_slot_id",
+          "timezone",
+          "verification_id"
+        ]
+      },
+      "inbound": {
+        "appId": "Amrita---We-4517816a-a47a",
+        "appVersion": 6,
+        "connectionId": "8800e72c-9c-8f9c2a3f-4876"
+      }
+    }
+  }
+}

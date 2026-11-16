@@ -13,6 +13,9 @@
 // nothing, which is how the "integration is not configured" paths are tested.
 // ============================================================
 
+// The project root, wherever the repository is checked out.
+const PROJECT = (await import("node:url")).fileURLToPath(new URL("..", import.meta.url)).split("\\").join("/").replace(/\/$/, "");
+
 import { isolateDatabase } from "./isolated-db";
 
 isolateDatabase("hospital");
@@ -135,17 +138,17 @@ const doctor = giveHospitalADoctor("doc_1");
 await refreshProviderDirectory(HOSPITAL);
 
 check("Doctors are read through the hospital server", providers(HOSPITAL).some((entry) => entry.id === doctor.id));
-check("The doctor CRUD route is gone", !fs.existsSync("C:/Dialo AI/src/app/api/hospital/doctors/route.ts"));
-check("The Doctors page is gone", !fs.existsSync("C:/Dialo AI/src/app/hospital/doctors/page.tsx"));
+check("The doctor CRUD route is gone", !fs.existsSync(PROJECT + "/src/app/api/hospital/doctors/route.ts"));
+check("The Doctors page is gone", !fs.existsSync(PROJECT + "/src/app/hospital/doctors/page.tsx"));
 check(
   "…and there is no Doctors navigation item",
-  !fs.readFileSync("C:/Dialo AI/src/components/hospital/shell.tsx", "utf8").includes('label: "Doctors"')
+  !fs.readFileSync(PROJECT + "/src/components/hospital/shell.tsx", "utf8").includes('label: "Doctors"')
 );
 // The panel is one application with the platform now, not a second one on
 // its own port talking to it through a proxy.
-check("The standalone panel app is gone", !fs.existsSync("C:/Dialo AI/hospital"));
-check("…and its proxy with it", !fs.existsSync("C:/Dialo AI/hospital/app/api/tringlo"));
-check("…while its pages live in the platform", fs.existsSync("C:/Dialo AI/src/app/hospital/page.tsx"));
+check("The standalone panel app is gone", !fs.existsSync(PROJECT + "/hospital"));
+check("…and its proxy with it", !fs.existsSync(PROJECT + "/hospital/app/api/tringlo"));
+check("…while its pages live in the platform", fs.existsSync(PROJECT + "/src/app/hospital/page.tsx"));
 check(
   "The hospital's own hours are what the directory reports",
   providerFor(HOSPITAL, doctor.id)?.hours?.start === "09:00",

@@ -323,6 +323,7 @@ function asProvider(doctor: Doctor): HisProvider {
       .filter((entry) => entry.kind === "special_hours" && entry.hours)
       .map((entry) => ({ date: entry.date, start: entry.hours!.start, end: entry.hours!.end })),
     accepting: doctor.status === "active",
+    consultationFee: doctor.consultationFee ?? null,
     avatar: doctor.avatar ?? null,
     demo: doctor.demo,
   };

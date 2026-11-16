@@ -140,7 +140,7 @@ function Appointments() {
             onChange={(event) => setSearch(event.target.value)}
           />
         </div>
-        <select className={`${inputClass} w-auto`} value={status} onChange={(event) => setStatus(event.target.value)}>
+        <select className={inputClass.replace("w-full", "w-auto")} value={status} onChange={(event) => setStatus(event.target.value)}>
           <option value="">Any status</option>
           {STATUSES.map((item) => (
             <option key={item} value={item}>
@@ -148,7 +148,7 @@ function Appointments() {
             </option>
           ))}
         </select>
-        <input type="date" className={`${inputClass} w-auto`} value={date} onChange={(event) => setDate(event.target.value)} />
+        <input type="date" className={inputClass.replace("w-full", "w-auto")} value={date} onChange={(event) => setDate(event.target.value)} />
         {date && (
           <Button variant="quiet" onClick={() => setDate("")}>
             Clear date

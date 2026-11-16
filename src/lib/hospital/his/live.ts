@@ -384,6 +384,7 @@ function normaliseProvider(row: Record<string, unknown>): HisProvider | null {
           .map((entry) => ({ date: entry.date as string, start: entry.start as string, end: entry.end as string }))
       : [],
     accepting: row.accepting === undefined ? true : Boolean(row.accepting),
+    consultationFee: typeof row.consultationFee === "number" ? row.consultationFee : null,
     avatar: typeof row.avatar === "string" ? row.avatar : null,
     demo: false,
   };

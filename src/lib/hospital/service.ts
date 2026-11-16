@@ -455,10 +455,13 @@ export function rescheduleAppointment(
     localDate(appointment.scheduledAt, profile.timezone) === changes.date &&
     localTime(appointment.scheduledAt, profile.timezone) === changes.time;
 
-  if (!movingWithinItself) {
-    if (!slot) return { ok: false, problem: `${doctor.name} does not consult at ${changes.time} on ${changes.date}.` };
-    if (!slot.available) return { ok: false, problem: "That slot is no longer free. Choose another time." };
+  // Already there: a repeated request (a retried tool call, a redelivered
+  // result) must not move it "again", add history or re-time its reminder.
+  if (movingWithinItself) {
+    return { ok: true, appointment, reminder: getReminderForAppointment(tenantId, appointment.id) ?? null };
   }
+  if (!slot) return { ok: false, problem: `${doctor.name} does not consult at ${changes.time} on ${changes.date}.` };
+  if (!slot.available) return { ok: false, problem: "That slot is no longer free. Choose another time." };
 
   const from = appointment.scheduledAt;
   const at = instantFor(changes.date, changes.time, profile.timezone);
@@ -484,6 +487,16 @@ export function rescheduleAppointment(
     note: changes.note ?? null,
   });
   audit(tenantId, actor, "appointment.rescheduled", next.id, `${from} → ${next.scheduledAt}`);
+
+  // The agent moving an appointment DURING a confirmation call about it. That
+  // reminder belongs to the call still in progress: re-timing it here would
+  // unlink it from the call, so the call's outcome would be lost when it
+  // arrives and the patient would be rung again about a time they just chose.
+  // It is left as it is; the post-call result records the outcome.
+  const inFlight = getReminderForAppointment(tenantId, next.id);
+  if (actor === "agent" && inFlight && (inFlight.status === "sent" || inFlight.status === "calling") && !inFlight.outcome) {
+    return { ok: true, appointment: next, reminder: inFlight };
+  }
 
   // The old reminder was for a time that no longer exists.
   cancelReminderFor(tenantId, next.id, "the appointment moved");
@@ -669,7 +682,12 @@ export type OutcomeResult =
 export function recordConfirmationOutcome(
   tenantId: string,
   reminderId: string,
-  outcome: { response: ConfirmationOutcome["response"]; note?: string | null },
+  outcome: {
+    response: ConfirmationOutcome["response"];
+    note?: string | null;
+    /** What was done, when the agent already acted on the request during the call. */
+    action?: string;
+  },
   actor: string
 ): OutcomeResult {
   const reminder = getReminder(tenantId, reminderId);
@@ -706,6 +724,8 @@ export function recordConfirmationOutcome(
       action = "The reply was not clear, so the appointment was left as it is.";
       break;
   }
+
+  if (outcome.action) action = outcome.action;
 
   const next = saveReminder({
     ...reminder,

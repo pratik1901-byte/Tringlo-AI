@@ -1,69 +1,103 @@
 {
-  "_comment": "Tool/function definitions for Maya's Sarvam app (Amrita---We-4517816a-a47a). Register these in the Sarvam dashboard's tool/function-calling editor for the OUTBOUND and INBOUND agent versions used on calls. Each tool makes an HTTP call to Tringlo's deterministic backend, which runs the real database operation and returns a structured result. Field names here follow the common JSON-Schema function-calling shape; map them to Sarvam's tool editor fields as needed. Do NOT paste the token into source control — read it from the hospital workspace's webhook token.",
+  "_comment": "Tool definitions for Maya's Sarvam app (Amrita---We-4517816a-a47a), validated against src/lib/hospital/agent-tools.ts on 2026-11-12. Register each as an API tool in Sarvam (Build > Tools > API tool, lifecycle 'run' / During conversation). Do NOT paste the token into source control — store it in Sarvam Secrets.",
   "endpoint": {
     "method": "POST",
-    "url": "{WEBHOOK_BASE_URL}/api/hospital/agent-tools",
-    "headers": {
-      "Content-Type": "application/json",
-      "Authorization": "Bearer {WELLNESS_WEBHOOK_TOKEN}"
-    },
-    "auth_alternative": "If Sarvam's tool config cannot send a header, append ?k={WELLNESS_WEBHOOK_TOKEN} to the url instead (less preferred — keeps the token out of logs only with the header).",
-    "request_body_template": { "tool": "<tool_name>", "args": "<arguments object>" },
+    "url_per_tool": "{PUBLIC_BASE_URL}/api/hospital/agent-tools?tool=<tool name>",
+    "auth": "Sarvam Auth type 'bearer token', credential = the Wellness workspace webhook token, stored in Sarvam Secrets. Fallback if bearer auth cannot be used: append &k=<token> to the URL.",
+    "body": "A JSON object whose keys are exactly the argument names below, e.g. { \"doctor_id\": \"...\", \"date\": \"2026-11-16\" }. In Sarvam's Body editor, insert each value with the @ variable picker. Tools with no arguments may send an empty body.",
+    "accepted_request_shapes": [
+      "POST ...?tool=<name> with the arguments object as the body — recommended for Sarvam, one URL per tool",
+      "POST ... with { \"tool\": \"<name>\", \"args\": { ... } } — `action`/`name` and `arguments`/`parameters` are accepted as synonyms",
+      "`args` may be a JSON-encoded string"
+    ],
+    "argument_leniency": "Times: HH:MM, HH:MM:SS or with AM/PM ('10:30 AM', '4 pm') are normalised to 24-hour HH:MM. Dates must be YYYY-MM-DD, except date_of_birth which also accepts DD-MM-YYYY, DD/MM/YYYY and DD.MM.YYYY. `confirm` may be true or the string \"true\"/\"yes\". `days` may be a numeric string.",
     "response_envelope": {
-      "ok": "boolean — true if the operation succeeded",
+      "ok": "boolean — true only when the backend confirmed the operation",
       "data": "object — present when ok:true; speak from this",
       "error": "string — present when ok:false; explain this to the caller",
       "code": "string — machine-readable failure code when ok:false",
+      "data (on failure)": "on a failed book_appointment / reschedule_appointment, data.alternatives is { date, slots[] }: free times on the requested day, or the next day within two weeks that has any (null if none)",
       "tookMs": "number — backend execution time",
-      "correlationId": "string — ties the call to Tringlo's logs"
+      "correlationId": "string — ties the call to Tringlo's AGENT_TOOL log lines"
     },
-    "notes": "A failed tool still returns HTTP 200 with ok:false — read `ok`, never the HTTP status. Typical response time is single-digit milliseconds; wait for the result before speaking."
+    "notes": "A failed tool still returns HTTP 200 with ok:false — read `ok`, never the HTTP status. Typical response time is single-digit milliseconds; a Sarvam 'Max wait' of 10 seconds is ample."
+  },
+  "verification": {
+    "summary": "Every tool that reads or changes an EXISTING appointment requires a verification_id from verify_patient. A verification is issued only when the hospital's records match BOTH the phone number and the date of birth. It lasts 30 minutes, lives in the running server's memory (a restart means verifying again), and only ever covers appointments booked under the verified phone number. Three failed attempts for one number lock it for 15 minutes.",
+    "failure_codes": {
+      "missing_identity": "phone or date of birth not supplied",
+      "bad_phone": "phone number unreadable",
+      "bad_date_of_birth": "date of birth unreadable",
+      "not_verified": "details do not match the hospital's records (same answer whether or not the number is known)",
+      "verification_locked": "too many failed attempts for this number",
+      "verification_unavailable": "the hospital system cannot check identity right now",
+      "verification_required": "a gated tool was called without a verification_id",
+      "verification_invalid": "unknown verification_id (or from another workspace)",
+      "verification_expired": "verification older than 30 minutes",
+      "not_found_for_patient": "the appointment does not exist OR belongs to someone else (deliberately indistinguishable)"
+    },
+    "post_call": "After a reminder call, Tringlo applies a confirm/move/cancel only if its OWN record shows a verify_patient verification for that appointment's phone number issued during that call. Maya's identity_verified output can veto but never grant. Save verify_patient's data.verification_id into an agent variable named verification_id (Sarvam: 'Save reply into variables') so it is returned with the call result; a returned id that does not match is refused.",
+    "limitation": "Only patients in the hospital's patient directory can be verified. A caller the hospital has no record of can book, but cannot later look up, move or cancel by phone — that goes to staff."
   },
   "tools": [
     {
       "name": "get_doctors",
-      "description": "List the hospital's doctors and their specialties. Use when the caller asks who is available or wants to choose a doctor.",
+      "description": "List every doctor currently taking appointments, with doctor_id, specialty, department, consulting days and hours, and consultation fee (INR, may be null).",
+      "parameters": { "type": "object", "properties": {}, "required": [] }
+    },
+    {
+      "name": "get_departments",
+      "description": "List the hospital's departments, the specialties in each, and how many doctors are consulting. Use when the caller asks what departments or services the hospital has.",
       "parameters": { "type": "object", "properties": {}, "required": [] }
     },
     {
       "name": "search_doctors",
-      "description": "Find doctors by name, specialty or department. Use when the caller names a specialty (e.g. 'a cardiologist') or a doctor.",
-      "parameters": { "type": "object", "properties": { "query": { "type": "string", "description": "Specialty, department or doctor name" } }, "required": ["query"] }
+      "description": "Find doctors whose name, specialty or department contains the query, e.g. 'cardio' or 'Mehta'. An empty query returns all doctors.",
+      "parameters": { "type": "object", "properties": { "query": { "type": "string", "description": "Part of a doctor's name, specialty or department" } }, "required": ["query"] }
     },
     {
       "name": "check_doctor_availability",
-      "description": "Check a doctor's genuinely free appointment slots on a specific date. Always call this before offering any time; never invent availability.",
-      "parameters": { "type": "object", "properties": { "doctor_id": { "type": "string" }, "date": { "type": "string", "description": "YYYY-MM-DD in Asia/Kolkata" } }, "required": ["doctor_id", "date"] }
+      "description": "Free appointment times for one doctor on one date. Call this before offering any time; never invent availability.",
+      "parameters": { "type": "object", "properties": { "doctor_id": { "type": "string" }, "date": { "type": "string", "description": "YYYY-MM-DD, Asia/Kolkata" } }, "required": ["doctor_id", "date"] }
     },
     {
       "name": "get_available_slots",
-      "description": "Get available slots for a doctor (or specialty) across a range of upcoming days. Use when the caller is flexible on the date.",
-      "parameters": { "type": "object", "properties": { "doctor_id": { "type": "string" }, "specialty": { "type": "string" }, "from_date": { "type": "string", "description": "YYYY-MM-DD; defaults to today" }, "days": { "type": "integer", "description": "How many days ahead to scan (1-14)" } }, "required": [] }
+      "description": "Free times across several days, for one doctor or one specialty. Use when the caller is flexible on the date.",
+      "parameters": { "type": "object", "properties": { "doctor_id": { "type": "string" }, "specialty": { "type": "string", "description": "Exact specialty name as returned by a doctor search, e.g. 'Cardiology' (not a partial word)" }, "from_date": { "type": "string", "description": "YYYY-MM-DD; defaults to today" }, "days": { "type": "integer", "description": "Days to scan, 1-14, default 7" } }, "required": [] }
     },
     {
       "name": "book_appointment",
-      "description": "Book an appointment in a verified free slot. Only call after reading the details back and getting the caller's explicit confirmation. Returns the real appointment reference id on success.",
-      "parameters": { "type": "object", "properties": { "patient_name": { "type": "string" }, "patient_phone": { "type": "string" }, "doctor_id": { "type": "string" }, "appointment_date": { "type": "string", "description": "YYYY-MM-DD" }, "appointment_time": { "type": "string", "description": "HH:MM, 24-hour" }, "reason": { "type": "string" } }, "required": ["patient_name", "patient_phone", "doctor_id", "appointment_date", "appointment_time"] }
+      "description": "Book a new appointment in a free slot, after reading the details back and getting the caller's clear yes. Does not require verification. Returns appointment_id and the doctor's remaining free times that day; on failure returns alternatives.",
+      "parameters": { "type": "object", "properties": { "patient_name": { "type": "string" }, "patient_phone": { "type": "string", "description": "With country code" }, "doctor_id": { "type": "string" }, "appointment_date": { "type": "string", "description": "YYYY-MM-DD" }, "appointment_time": { "type": "string", "description": "HH:MM, 24-hour" }, "reason": { "type": "string" } }, "required": ["patient_name", "patient_phone", "doctor_id", "appointment_date", "appointment_time"] }
+    },
+    {
+      "name": "verify_patient",
+      "description": "Verify the caller is a patient on the hospital's records, using their phone number AND date of birth. Required before any lookup, reschedule or cancellation of an existing appointment. Returns verification_id and the patient's name on record. Never reveals whether a number is known when the details do not match.",
+      "parameters": { "type": "object", "properties": { "patient_phone": { "type": "string", "description": "The phone number the appointment was booked under, with country code" }, "date_of_birth": { "type": "string", "description": "YYYY-MM-DD (DD-MM-YYYY and DD/MM/YYYY also accepted)" } }, "required": ["patient_phone", "date_of_birth"] }
     },
     {
       "name": "get_patient_appointments",
-      "description": "Retrieve a caller's existing appointments by their phone number.",
-      "parameters": { "type": "object", "properties": { "patient_phone": { "type": "string" } }, "required": ["patient_phone"] }
-    },
-    {
-      "name": "reschedule_appointment",
-      "description": "Move an existing appointment to a new, genuinely free slot. Confirm the new time with the caller first. Preserves the original in history.",
-      "parameters": { "type": "object", "properties": { "appointment_id": { "type": "string" }, "new_date": { "type": "string", "description": "YYYY-MM-DD" }, "new_time": { "type": "string", "description": "HH:MM" } }, "required": ["appointment_id", "new_date", "new_time"] }
-    },
-    {
-      "name": "cancel_appointment",
-      "description": "Cancel an appointment. Only call with confirm:true after the caller has explicitly agreed to cancel.",
-      "parameters": { "type": "object", "properties": { "appointment_id": { "type": "string" }, "confirm": { "type": "boolean", "description": "Must be true; set only after explicit caller confirmation" }, "reason": { "type": "string" } }, "required": ["appointment_id", "confirm"] }
+      "description": "The verified patient's appointments (cancelled ones excluded), each with appointment_id, doctor, date, time, status and an `upcoming` flag.",
+      "parameters": { "type": "object", "properties": { "verification_id": { "type": "string", "description": "From verify_patient" } }, "required": ["verification_id"] }
     },
     {
       "name": "get_appointment_details",
-      "description": "Retrieve one appointment's details. Pass the caller's phone to verify ownership before reading anything out.",
-      "parameters": { "type": "object", "properties": { "appointment_id": { "type": "string" }, "patient_phone": { "type": "string" } }, "required": ["appointment_id"] }
+      "description": "One of the verified patient's appointments, including doctor_id (needed to check new times for a reschedule).",
+      "parameters": { "type": "object", "properties": { "appointment_id": { "type": "string" }, "verification_id": { "type": "string", "description": "From verify_patient" } }, "required": ["appointment_id", "verification_id"] }
+    },
+    {
+      "name": "reschedule_appointment",
+      "description": "Move one of the verified patient's appointments to a new free time with the same doctor, after the caller agrees to the new time. On failure returns alternatives.",
+      "parameters": { "type": "object", "properties": { "appointment_id": { "type": "string" }, "new_date": { "type": "string", "description": "YYYY-MM-DD" }, "new_time": { "type": "string", "description": "HH:MM, 24-hour" }, "verification_id": { "type": "string", "description": "From verify_patient" } }, "required": ["appointment_id", "new_date", "new_time", "verification_id"] }
+    },
+    {
+      "name": "cancel_appointment",
+      "description": "Cancel one of the verified patient's appointments. Set confirm to true only after the caller has explicitly said yes to cancelling. Read `cancelled`: true means cancelled; false means the request is with the hospital and the appointment stands for now.",
+      "parameters": { "type": "object", "properties": { "appointment_id": { "type": "string" }, "confirm": { "type": "boolean", "description": "Must be true; set only after explicit caller confirmation" }, "reason": { "type": "string" }, "verification_id": { "type": "string", "description": "From verify_patient" } }, "required": ["appointment_id", "confirm", "verification_id"] }
     }
-  ]
+  ],
+  "not_tringlo_tools": {
+    "call_transfer": "A Sarvam core tool, not a Tringlo endpoint. It works only once Settings > In Call Actions > Call forwarding has a destination, on supported telephony, on phone calls. Wellness has no destination configured, so it is unavailable.",
+    "confirm_appointment": "Does not exist. A reminder call's confirmation is recorded by Tringlo after the call from Maya's output variables."
+  }
 }

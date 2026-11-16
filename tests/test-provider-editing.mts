@@ -39,7 +39,7 @@ const providerRoute = await import("@/app/api/integrations/provider/route");
 const inboundRoute = await import("@/app/api/inbound/settings/route");
 const { saveInboundDraft } = await import("@/lib/inbound/service");
 const { hashSessionToken } = await import("@/lib/auth/sessions");
-const { NextRequest } = await import("C:/Dialo AI/node_modules/next/server.js");
+const { NextRequest } = await import(new URL("../node_modules/next/server.js", import.meta.url).href);
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail: unknown = "") => {

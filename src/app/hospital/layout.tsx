@@ -17,12 +17,11 @@
 // ============================================================
 
 import type { Metadata } from "next";
-import { EB_Garamond, Inter } from "next/font/google";
+import { EB_Garamond } from "next/font/google";
 
 import "./hospital.css";
 import { Shell } from "@/components/hospital/shell";
 
-const body = Inter({ subsets: ["latin"], variable: "--font-body", display: "swap" });
 const display = EB_Garamond({ subsets: ["latin"], variable: "--font-display", display: "swap" });
 
 export const metadata: Metadata = {
@@ -32,7 +31,7 @@ export const metadata: Metadata = {
 
 export default function HospitalLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className={`hospital-panel ${body.variable} ${display.variable} min-h-dvh`}>
+    <div className={`hospital-panel ${display.variable} min-h-dvh`}>
       <Shell>{children}</Shell>
     </div>
   );

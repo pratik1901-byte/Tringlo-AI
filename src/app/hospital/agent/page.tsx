@@ -171,9 +171,11 @@ export default function AgentPage() {
             changing a schedule reaches the next caller without anyone editing a prompt on Sarvam.
           </p>
           <p className="text-ink-muted">
-            Booking, moving and cancelling during a call need a Sarvam tool call back into Tringlo. That capability is
-            not configured here, so today {agentName} answers with current information, and bookings taken on a call are
-            entered by staff afterwards.
+            Booking, moving and cancelling during a call happen through a Sarvam tool call back into this hospital&apos;s
+            tool endpoint, which checks and writes the same records this panel shows. The endpoint is part of Tringlo;
+            the tools themselves are registered on the agent in Sarvam&apos;s dashboard, and this page cannot see whether
+            they have been. Until they are, {agentName} answers with current information only, and a booking she
+            takes appears under Appointments only once a tool call has confirmed it.
           </p>
         </div>
       </Card>

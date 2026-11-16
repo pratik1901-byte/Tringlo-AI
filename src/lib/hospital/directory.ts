@@ -84,13 +84,12 @@ export async function refreshProviderDirectory(tenantId: string): Promise<Refres
  * into the synchronous path this cache exists to keep clear.
  */
 export function providerDirectory(tenantId: string): ProviderDirectory {
-  const stored = readProviderDirectory(tenantId);
-  if (stored) return stored;
-
   const server = hospitalServer(tenantId);
   if (server.mode === "demo") {
-    // Read on the spot. The stand-in's directory is local records, so there is
-    // nothing to wait for and no reason to serve an empty list first.
+    // Always read on the spot, never from the stored copy. The stand-in's
+    // directory is local records, so there is nothing to wait for — and a
+    // stored copy would go on offering a schedule an administrator has since
+    // changed by any route that forgot to refresh it.
     return {
       tenantId,
       providers: demoProviders(tenantId),
@@ -99,6 +98,9 @@ export function providerDirectory(tenantId: string): ProviderDirectory {
       problem: null,
     };
   }
+
+  const stored = readProviderDirectory(tenantId);
+  if (stored) return stored;
 
   return {
     tenantId,

@@ -1,0 +1,141 @@
+{
+  "backedUpAt": "2026-10-03T09:23:01.714Z",
+  "source": "before-sahana-delete-20261003-000742/database.json",
+  "note": "Everything removed for Sahana on 2026-10-03. Her lead row had been deleted earlier from the Leads page; the copy of her lead details embedded in her call record is kept under lead.",
+  "lead": {
+    "id": "lead_1790779316192_x791ht",
+    "tenantId": "tenant_1790143786482_2lzjp2",
+    "name": "Sahana",
+    "phone": "7676311132",
+    "campaign": "cmp_1790779832623_j6ay98",
+    "callingDate": "2026-09-30",
+    "callingTime": "10:00",
+    "timezone": "Asia/Calcutta",
+    "createdAt": "2026-09-30T14:41:56.192Z",
+    "status": "failed",
+    "suppressed": false,
+    "lastAttemptId": "01a0f2cb-c309-72b8-b7e8-bcb6e04bc837"
+  },
+  "callRecords": [
+    {
+      "id": "call_1790963130025_lbvobf",
+      "tenantId": "tenant_1790143786482_2lzjp2",
+      "leadId": "lead_1790779316192_x791ht",
+      "lead": {
+        "id": "lead_1790779316192_x791ht",
+        "tenantId": "tenant_1790143786482_2lzjp2",
+        "name": "Sahana",
+        "phone": "7676311132",
+        "campaign": "cmp_1790779832623_j6ay98",
+        "callingDate": "2026-09-30",
+        "callingTime": "10:00",
+        "timezone": "Asia/Calcutta",
+        "createdAt": "2026-09-30T14:41:56.192Z",
+        "status": "failed",
+        "suppressed": false,
+        "lastAttemptId": "01a0f2cb-c309-72b8-b7e8-bcb6e04bc837"
+      },
+      "status": "failed",
+      "startedAt": null,
+      "endedAt": null,
+      "requestedAt": "2026-10-02T17:45:30.025Z",
+      "connectedAt": null,
+      "duration": null,
+      "attempts": 1,
+      "transcript": null,
+      "transcriptTurns": null,
+      "aiSummary": null,
+      "aiResult": null,
+      "lastContactedAt": null,
+      "nextAction": null,
+      "humanHandoffStatus": "none",
+      "provider": "sarvam",
+      "origin": "campaign",
+      "providerAttemptId": "01a0f2cb-c309-72b8-b7e8-bcb6e04bc837",
+      "campaignId": "cmp_1790779832623_j6ay98",
+      "providerCampaignId": "Test-2456ea7e-b4c0",
+      "providerCohortId": "batch-1-a8a0768b-d210",
+      "retryAttempt": 0,
+      "providerInteractionId": null,
+      "providerStatus": null,
+      "connectivityStatus": "failed",
+      "completionStatus": "failed",
+      "failureReason": null,
+      "recordingUrl": null,
+      "callOutcome": null,
+      "callDisposition": null,
+      "interestLevel": null,
+      "interestConfidence": null,
+      "painPoints": null,
+      "objection": null,
+      "customerRequirement": null,
+      "budgetIndication": null,
+      "timelineToDecide": null,
+      "authorityLevel": null,
+      "competitorMentioned": null,
+      "discoveryFitScore": null,
+      "chosenNextStep": null,
+      "nextStepDateTime": null,
+      "followUpRequired": false,
+      "followUpDate": null,
+      "followUpTime": null,
+      "followUpTimezone": null,
+      "doNotCall": false,
+      "humanHandoffRequired": false,
+      "outputVariables": null,
+      "nextActionStatus": null
+    }
+  ],
+  "campaignEntries": [
+    {
+      "campaignId": "cmp_1790779832623_j6ay98",
+      "campaignName": "Test",
+      "providerCampaignId": "Test-2456ea7e-b4c0",
+      "member": {
+        "leadId": "lead_1790779316192_x791ht",
+        "phone": "+917676311132",
+        "name": "Sahana",
+        "hadMemory": false
+      }
+    }
+  ],
+  "followUps": [],
+  "rawEvents": [
+    {
+      "id": "evt_1790963130019_3amo",
+      "receivedAt": "2026-10-02T17:45:30.019Z",
+      "attemptId": "01a0f2cb-c309-72b8-b7e8-bcb6e04bc837",
+      "status": "",
+      "payload": {
+        "attempt_id": "01a0f2cb-c309-72b8-b7e8-bcb6e04bc837",
+        "campaign_id": "Test-2456ea7e-b4c0",
+        "cohort_id": "batch-1-a8a0768b-d210",
+        "user_identifier": "lead_1790779316192_x791ht",
+        "user_phone_number": "+917676311132",
+        "connectivity_status": "failed",
+        "completion_status": "failed",
+        "next_action_status": null,
+        "failure_reason": null,
+        "duration": null,
+        "interaction_id": null,
+        "retry_attempt": 0,
+        "start_datetime": null,
+        "end_datetime": null,
+        "output_agent_variables": null,
+        "interaction_transcript": null,
+        "metadata": {
+          "source": "sarvam_analytics",
+          "dialo_campaign_id": "cmp_1790779832623_j6ay98"
+        }
+      }
+    }
+  ],
+  "webhookReceipts": [
+    {
+      "attemptId": "01a0f2cb-c309-72b8-b7e8-bcb6e04bc837",
+      "fingerprint": "77_4pvkx2",
+      "status": "failed",
+      "appliedAt": "2026-10-02T17:45:30.041Z"
+    }
+  ]
+}

@@ -33,8 +33,9 @@ import { isTerminalCallStatus, type CallRecord } from "@/lib/types";
 import { requestCancellation } from "./cancellations";
 import { isHospitalWorkspace } from "./context";
 import { createFollowUp } from "./followups";
-import { hospitalProfile, recordConfirmationOutcome, rescheduleAppointment } from "./service";
+import { hospitalProfile, localDate, localTime, recordConfirmationOutcome, rescheduleAppointment } from "./service";
 import type { ConfirmationOutcome } from "./types";
+import { verifiedDuringCall } from "./verification";
 
 /** Minutes to wait before a no-answer confirmation call is tried again. */
 const RETRY_DELAY_MINUTES = 30;
@@ -142,8 +143,28 @@ export function interpretReminderCall(
   // and an explicit reschedule are read before a plain confirmation, because a
   // patient who says "actually, cancel it" has said something a "confirmed"
   // flag must not override.
+  // Maya's own explicit answer decides first. Free text is read only when she
+  // gave none, because a summary like "confirmed — no need to cancel" contains
+  // the word "cancel" and must not cancel a confirmed appointment.
+  const EXPLICIT: Record<string, Response> = {
+    confirmed: "confirmed",
+    confirm: "confirmed",
+    cancelled: "cancel_requested",
+    cancel: "cancel_requested",
+    cancel_requested: "cancel_requested",
+    rescheduled: "reschedule_requested",
+    reschedule_requested: "reschedule_requested",
+    not_attending: "declined",
+    "not attending": "declined",
+  };
   let response: Response;
-  if (isTrue(reschedule) || has(combined, "reschedul", "change the appointment", "different time", "another time")) {
+  if (confirmation === "unclear" && !isTrue(reschedule)) {
+    return { ...base, response: "unclear", needsReview: true };
+  } else if (isTrue(reschedule)) {
+    response = "reschedule_requested";
+  } else if (EXPLICIT[confirmation]) {
+    response = EXPLICIT[confirmation];
+  } else if (has(combined, "reschedul", "change the appointment", "different time", "another time")) {
     response = "reschedule_requested";
   } else if (has(combined, "cancel")) {
     response = "cancel_requested";
@@ -208,7 +229,42 @@ export async function applyReminderCallResult(call: CallRecord): Promise<Reminde
   const appointment = getAppointment(tenantId, reminder.appointmentId);
   if (!appointment) return { handled: false, reason: "the appointment no longer exists" };
 
-  const decision = interpretReminderCall(call.outputVariables as Record<string, unknown> | null, connected);
+  let decision = interpretReminderCall(call.outputVariables as Record<string, unknown> | null, connected);
+
+  // Identity, as the backend knows it. The agent's `identity_verified` is a
+  // claim made by a model; what counts is whether `verify_patient` actually
+  // issued a verification for this appointment's patient during this call. A
+  // confirmation, move or cancellation without that evidence changes nothing
+  // and goes to staff.
+  const outputs = (call.outputVariables ?? {}) as Record<string, unknown>;
+  // Only something shaped like an id Tringlo issues is a claim to one. The
+  // agent declares `verification_id` as a variable, so a call where it was never
+  // saved comes back with Sarvam's default ("", "<verification_id>", …) — that
+  // is no claim, and the backend's own record decides on its own.
+  const reported = typeof outputs.verification_id === "string" ? outputs.verification_id.trim() : "";
+  const claimedId = /^pv_[0-9a-f]{32}$/.test(reported) ? reported : null;
+  const callStarts = [call.requestedAt, call.startedAt, reminder.lastAttemptAt]
+    .map((at) => (at ? Date.parse(at) : Number.NaN))
+    .filter((at) => Number.isFinite(at));
+  const backendVerified = verifiedDuringCall({
+    tenantId,
+    patientPhone: appointment.patientPhone,
+    from: callStarts.length ? Math.min(...callStarts) : null,
+    to: call.endedAt ? Date.parse(call.endedAt) : Date.now(),
+    claimedId,
+  });
+  const actionable =
+    decision.response === "confirmed" || decision.response === "reschedule_requested" || decision.response === "cancel_requested";
+  if (actionable && !backendVerified) {
+    const said = decision.note ? ` Patient said: ${decision.note}` : "";
+    decision = {
+      ...decision,
+      response: "unclear",
+      needsReview: true,
+      identityVerified: false,
+      note: `The hospital's records did not verify the patient during this call, so nothing was changed.${said}`,
+    };
+  }
 
   // A no-answer is not an outcome. It returns to the queue for one more try,
   // bounded by the hospital's own limit, and never marks the appointment.
@@ -236,9 +292,31 @@ export async function applyReminderCallResult(call: CallRecord): Promise<Reminde
     };
   }
 
+  // Maya may already have acted on the request during the call, through her
+  // tools. The appointment is then already where the patient asked for it, and
+  // applying the request again would modify it a second time. The outcome is
+  // recorded as what happened, and nothing is changed.
+  const tz = hospitalProfile(tenantId).timezone;
+  const movedDuringCall =
+    decision.response === "reschedule_requested" &&
+    Boolean(decision.newDate && decision.newTime) &&
+    localDate(appointment.scheduledAt, tz) === decision.newDate &&
+    localTime(appointment.scheduledAt, tz) === decision.newTime;
+  const cancelledDuringCall = decision.response === "cancel_requested" && appointment.status === "cancelled";
+  const doneDuringCall = movedDuringCall
+    ? `Rescheduled during the call to ${decision.newDate} ${decision.newTime}.`
+    : cancelledDuringCall
+      ? "Cancelled during the call."
+      : undefined;
+
   // Record what the patient said. This confirms the appointment on an explicit
   // confirmation and nothing else — the function enforces that, not this caller.
-  const recorded = recordConfirmationOutcome(tenantId, reminder.id, { response: decision.response, note: decision.note }, "agent");
+  const recorded = recordConfirmationOutcome(
+    tenantId,
+    reminder.id,
+    { response: decision.response, note: decision.note, action: doneDuringCall },
+    "agent"
+  );
   if (!recorded.ok) return { handled: false, reason: recorded.problem };
 
   const result: ReminderResult = {
@@ -251,6 +329,10 @@ export async function applyReminderCallResult(call: CallRecord): Promise<Reminde
 
   // --- Reschedule: only when a concrete slot was chosen and is still free ---
   if (decision.response === "reschedule_requested") {
+    if (movedDuringCall) {
+      result.rescheduled = true;
+      return result;
+    }
     if (decision.newDate && decision.newTime) {
       const moved = rescheduleAppointment(
         tenantId,
@@ -299,6 +381,7 @@ export async function applyReminderCallResult(call: CallRecord): Promise<Reminde
   // hospital's system or staff must confirm. Its failure must not break the
   // webhook, so it is awaited inside a guard.
   if (decision.response === "cancel_requested") {
+    if (cancelledDuringCall) return result;
     try {
       await requestCancellation({
         tenantId,
@@ -306,7 +389,8 @@ export async function applyReminderCallResult(call: CallRecord): Promise<Reminde
         requestedVia: "confirmation_call",
         reason: decision.note || "Patient asked to cancel on the confirmation call.",
         actor: "agent",
-        identityVerified: decision.identityVerified,
+        // The backend's evidence, not the agent's claim.
+        identityVerified: backendVerified && decision.identityVerified,
       });
     } catch (error) {
       console.error(

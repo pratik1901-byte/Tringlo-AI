@@ -48,15 +48,38 @@ export async function POST(request: Request) {
 
   let body: Record<string, unknown> = {};
   try {
-    body = (await request.json()) as Record<string, unknown>;
+    // A tool with no arguments may arrive with no body at all.
+    const text = (await request.text()).trim();
+    const parsed = text ? (JSON.parse(text) as unknown) : {};
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object");
+    body = parsed as Record<string, unknown>;
   } catch {
     return NextResponse.json({ ok: false, error: "Invalid JSON." }, { status: 400, headers: noStore });
   }
 
-  const tool = String(body.tool ?? body.action ?? body.name ?? "").trim();
+  // The tool may be named in the body or on the URL (?tool=book_appointment),
+  // for a tool editor that gives each tool its own URL and sends only the
+  // arguments as the body.
+  const tool = String(body.tool ?? body.action ?? body.name ?? new URL(request.url).searchParams.get("tool") ?? "").trim();
   const cid = correlationId();
   if (!tool) return NextResponse.json({ ok: false, error: "No tool was named.", correlationId: cid }, { status: 400, headers: noStore });
-  const args = (body.args ?? body.arguments ?? body.parameters ?? {}) as Record<string, unknown>;
+  const wrapped = body.args ?? body.arguments ?? body.parameters;
+  // Arguments sent as a JSON string are parsed; arguments sent flat, with no
+  // wrapper, are the body itself.
+  let args: Record<string, unknown>;
+  if (typeof wrapped === "string") {
+    try {
+      args = JSON.parse(wrapped) as Record<string, unknown>;
+    } catch {
+      return NextResponse.json({ ok: false, error: "The arguments could not be read.", correlationId: cid }, { status: 400, headers: noStore });
+    }
+  } else if (wrapped && typeof wrapped === "object") {
+    args = wrapped as Record<string, unknown>;
+  } else {
+    const { tool: _tool, action: _action, name: _name, ...flat } = body;
+    void _tool; void _action; void _name;
+    args = flat;
+  }
 
   console.log(`AGENT_TOOL_RECV cid=${cid} workspace=${tenantId} tool=${tool} doctor=${String(args.doctor_id ?? "")} appointment=${String(args.appointment_id ?? "")}`);
 

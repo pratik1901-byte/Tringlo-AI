@@ -146,7 +146,12 @@ export default function OverviewPage() {
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Appointments today" value={metrics.appointmentsToday} tone="sage" href="/hospital/appointments" />
-        <Stat label="Upcoming" value={metrics.upcoming} note="Still to come" href="/hospital/appointments" />
+        <Stat
+          label="Upcoming"
+          value={metrics.upcoming}
+          note={`${metrics.confirmationsScheduled} confirmation calls ${profile.remindersEnabled ? "scheduled" : "held · calling is off"}`}
+          href="/hospital/appointments"
+        />
         <Stat
           label="Awaiting confirmation"
           value={metrics.awaitingConfirmation}
@@ -155,41 +160,11 @@ export default function OverviewPage() {
           href="/hospital/appointments?status=requested"
         />
         <Stat
-          label="Confirmation calls scheduled"
-          value={metrics.confirmationsScheduled}
-          note={profile.remindersEnabled ? "Placed by the server" : "Calling is switched off"}
-          href="/hospital/reminders"
+          label="Calls"
+          value={metrics.inboundCalls + metrics.outboundCalls}
+          note={`${metrics.inboundCalls} inbound · ${metrics.outboundCalls} outbound`}
+          href="/hospital/calls"
         />
-        <Stat
-          label="Cancellations awaiting"
-          value={metrics.cancellationsAwaiting}
-          note={metrics.cancellationsAwaiting ? "Not yet confirmed" : "None outstanding"}
-          tone={metrics.cancellationsAwaiting ? "alert" : "plain"}
-          href="/hospital/appointments"
-        />
-        <Stat
-          label="Reports to review"
-          value={metrics.reportsAwaitingReview}
-          note="Preliminary histories"
-          tone={metrics.reportsAwaitingReview ? "clay" : "plain"}
-          href="/hospital/medical-history"
-        />
-        <Stat
-          label="Open follow-ups"
-          value={metrics.openFollowUps}
-          note="Patients waiting to hear back"
-          tone={metrics.openFollowUps ? "clay" : "plain"}
-          href="/hospital/follow-ups"
-        />
-        <Stat
-          label="Unanswered inquiries"
-          value={metrics.unansweredInquiries}
-          note="No approved answer yet"
-          tone={metrics.unansweredInquiries ? "clay" : "plain"}
-          href="/hospital/inquiries"
-        />
-        <Stat label="Inbound calls" value={metrics.inboundCalls} href="/hospital/calls?direction=inbound" />
-        <Stat label="Outbound calls" value={metrics.outboundCalls} href="/hospital/calls?direction=outbound" />
       </div>
 
       {nothingYet && (

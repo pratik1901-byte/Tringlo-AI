@@ -15,11 +15,13 @@
 // returns within a voice turn rather than leaving the agent waiting.
 // ============================================================
 
-import { getAppointment, getAppointments, getLeads } from "@/lib/db";
+import { getAppointment, getAppointments } from "@/lib/db";
 import { normalisePhone } from "@/lib/customers/identity";
 import { requestCancellation } from "./cancellations";
 import { isDemoDoctorId } from "./demo-doctors";
 import { providerFor, providers } from "./directory";
+import { hospitalServer, type HisProvider } from "./his";
+import { VERIFICATION_TTL_MS, activeVerification, issueVerification, type PatientVerification } from "./verification";
 import {
   availabilityFor,
   bookAppointment as bookAppointmentService,
@@ -32,22 +34,53 @@ import {
 
 export type ToolResult =
   | { ok: true; data: unknown }
-  | { ok: false; error: string; code?: string };
+  | { ok: false; error: string; code?: string; data?: unknown };
 
 const ok = (data: unknown): ToolResult => ({ ok: true, data });
-const fail = (error: string, code?: string): ToolResult => ({ ok: false, error, code });
+const fail = (error: string, code?: string, data?: unknown): ToolResult => ({
+  ok: false,
+  error,
+  code,
+  ...(data === undefined ? {} : { data }),
+});
 
 /** A doctor as the agent should hear it — no internal plumbing. */
+const listing = (p: HisProvider) => ({
+  doctor_id: p.id,
+  doctor_name: p.name,
+  specialty: p.specialty,
+  department: p.department,
+  consulting_days: p.days,
+  consulting_hours: p.hours ? `${p.hours.start}-${p.hours.end}` : null,
+  consultation_fee: p.consultationFee ?? null,
+});
+
 function doctorView(tenantId: string, id: string) {
   const p = providerFor(tenantId, id);
   if (!p) return null;
-  return {
-    doctor_id: p.id,
-    doctor_name: p.name,
-    specialty: p.specialty,
-    department: p.department,
-    accepting: p.accepting,
-  };
+  return { ...listing(p), accepting: p.accepting };
+}
+
+/** The times a doctor is genuinely free on a date, read from the database now. */
+function freeTimes(tenantId: string, doctorId: string, date: string): string[] {
+  return slotsFor(tenantId, doctorId, date)
+    .filter((s) => s.available)
+    .map((s) => s.time);
+}
+
+/**
+ * What to offer instead: the free times on the day asked for, or failing that
+ * the next day within a fortnight that has any.
+ */
+function alternativesFor(tenantId: string, doctorId: string, date: string): { date: string; slots: string[] } | null {
+  const base = Date.parse(`${date}T00:00:00Z`);
+  if (Number.isNaN(base)) return null;
+  for (let i = 0; i <= 14; i += 1) {
+    const day = new Date(base + i * 86400_000).toISOString().slice(0, 10);
+    const slots = freeTimes(tenantId, doctorId, day);
+    if (slots.length > 0) return { date: day, slots };
+  }
+  return null;
 }
 
 // ------------------------------------------------------------
@@ -56,8 +89,27 @@ function doctorView(tenantId: string, id: string) {
 export function getDoctors(tenantId: string): ToolResult {
   const list = providers(tenantId)
     .filter((p) => p.accepting)
-    .map((p) => ({ doctor_id: p.id, doctor_name: p.name, specialty: p.specialty, department: p.department }));
+    .map(listing);
   return ok({ doctors: list, count: list.length });
+}
+
+// ------------------------------------------------------------
+// get_departments
+// ------------------------------------------------------------
+export function getDepartments(tenantId: string): ToolResult {
+  const byDepartment = new Map<string, { specialties: Set<string>; doctors: number }>();
+  for (const p of providers(tenantId)) {
+    if (!p.accepting) continue;
+    const name = p.department ?? p.specialty;
+    const entry = byDepartment.get(name) ?? { specialties: new Set<string>(), doctors: 0 };
+    entry.specialties.add(p.specialty);
+    entry.doctors += 1;
+    byDepartment.set(name, entry);
+  }
+  const departments = [...byDepartment.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([department, entry]) => ({ department, specialties: [...entry.specialties], doctor_count: entry.doctors }));
+  return ok({ departments, count: departments.length });
 }
 
 // ------------------------------------------------------------
@@ -74,7 +126,7 @@ export function searchDoctors(tenantId: string, args: { query?: string; specialt
         p.specialty.toLowerCase().includes(q) ||
         (p.department ?? "").toLowerCase().includes(q)
     )
-    .map((p) => ({ doctor_id: p.id, doctor_name: p.name, specialty: p.specialty, department: p.department }));
+    .map(listing);
   return ok({ doctors: list, count: list.length, query: q });
 }
 
@@ -139,8 +191,12 @@ export function bookAppointment(
   // service then guards the transaction against a double-booking race.
   const slots = slotsFor(tenantId, doctor_id, appointment_date);
   const slot = slots.find((s) => s.time === appointment_time);
-  if (!slot) return fail("That time is not one the doctor consults at.", "no_such_slot");
-  if (!slot.available) return fail("That slot has just been taken. Please choose another.", "slot_taken");
+  if (!slot) {
+    return fail("That time is not one the doctor consults at.", "no_such_slot", { alternatives: alternativesFor(tenantId, doctor_id, appointment_date) });
+  }
+  if (!slot.available) {
+    return fail("That slot is not available. Please choose another.", "slot_taken", { alternatives: alternativesFor(tenantId, doctor_id, appointment_date) });
+  }
 
   const result = bookAppointmentService({
     tenantId,
@@ -155,7 +211,9 @@ export function bookAppointment(
     callId: args.call_id ?? null,
     actor: "agent",
   });
-  if (!result.ok) return fail(result.problem, "not_booked");
+  if (!result.ok) {
+    return fail(result.problem, "not_booked", { alternatives: alternativesFor(tenantId, doctor_id, appointment_date) });
+  }
   const doctor = doctorView(tenantId, doctor_id);
   return ok({
     booked: true,
@@ -164,30 +222,129 @@ export function bookAppointment(
     patient_name,
     doctor_name: doctor?.doctor_name ?? null,
     department: doctor?.department ?? null,
+    consultation_fee: doctor?.consultation_fee ?? null,
     appointment_date,
     appointment_time,
     status: result.appointment.status,
+    // Read back after the write, so the next offer cannot include this slot.
+    remaining_slots: freeTimes(tenantId, doctor_id, appointment_date),
   });
 }
 
 // ------------------------------------------------------------
+// verify_patient — identity, by the hospital's own records
+// ------------------------------------------------------------
+//
+// A name or a phone number is not identity: anyone can say either. The
+// hospital's system is asked whether the phone number AND the date of birth the
+// caller gives belong to one patient, and only a confident match on both is a
+// verification. What comes back is a short-lived id, and every tool that reads
+// or changes an existing appointment requires it and acts only on appointments
+// booked under the verified patient's number.
+//
+// Sessions are kept by ./verification. Repeated failures for one number lock it
+// for a while, so a date of birth cannot be guessed by trying.
+
+const FAILURE_WINDOW_MS = 15 * 60_000;
+const MAX_FAILURES = 3;
+
+declare global {
+  var __tringloVerificationFailures: Map<string, number[]> | undefined;
+}
+const verificationFailures = (globalThis.__tringloVerificationFailures ??= new Map());
+
+/** "1986-04-11", "11-04-1986", "11/04/1986" or "11.04.1986" → "1986-04-11". */
+function normaliseDateOfBirth(value: string): string | null {
+  const text = value.trim();
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const dmy = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+  const parts = iso ? [iso[1], iso[2], iso[3]] : dmy ? [dmy[3], dmy[2], dmy[1]] : null;
+  if (!parts) return null;
+  const [y, m, d] = parts;
+  const date = `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  const parsed = new Date(`${date}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date ? date : null;
+}
+
+export async function verifyPatient(tenantId: string, args: { patient_phone?: string; date_of_birth?: string }): Promise<ToolResult> {
+  if (!args.patient_phone || !args.date_of_birth) {
+    return fail("The patient's phone number and date of birth are both needed to verify them.", "missing_identity");
+  }
+  const phoneNational = normalisePhone(args.patient_phone).national;
+  if (!phoneNational) return fail("That phone number could not be read.", "bad_phone");
+  const dateOfBirth = normaliseDateOfBirth(args.date_of_birth);
+  if (!dateOfBirth) return fail("That date of birth could not be read. It is needed as day, month and year.", "bad_date_of_birth");
+
+  const failureKey = `${tenantId}:${phoneNational}`;
+  const now = Date.now();
+  const recent = (verificationFailures.get(failureKey) ?? []).filter((at: number) => now - at < FAILURE_WINDOW_MS);
+  if (recent.length >= MAX_FAILURES) {
+    return fail("Too many unsuccessful attempts for this number. The hospital's staff will need to help.", "verification_locked");
+  }
+
+  const server = hospitalServer(tenantId);
+  if (!server.supports("patient_lookup")) {
+    return fail("The hospital's system cannot verify patients from here.", "verification_unavailable");
+  }
+  const result = await server.findPatient({ phone: args.patient_phone, dateOfBirth });
+  if (!result.ok) return fail("The hospital's records could not be checked just now.", "verification_unavailable");
+
+  const match = result.data;
+  const confirmed = match.confidence === "match" && match.matchedOn.includes("phone") && match.matchedOn.includes("dateOfBirth");
+  if (!confirmed) {
+    recent.push(now);
+    verificationFailures.set(failureKey, recent);
+    // One answer for "no such patient" and "details do not match", so a caller
+    // cannot learn whether a number is on the hospital's books.
+    return fail("Those details do not match the hospital's records.", "not_verified");
+  }
+
+  verificationFailures.delete(failureKey);
+  const verification = issueVerification({ tenantId, phoneNational, patientId: match.patientId, name: match.name });
+  return ok({ verified: true, verification_id: verification.id, patient_name: match.name, valid_for_minutes: VERIFICATION_TTL_MS / 60_000 });
+}
+
+const VERIFICATION_MESSAGES = {
+  verification_required: "The patient must be verified first with their phone number and date of birth.",
+  verification_invalid: "That verification is not valid. Verify the patient again.",
+  verification_expired: "That verification has expired. Verify the patient again.",
+} as const;
+
+/** The verification a tool call carries, or the failure to speak instead. */
+function verifiedPatient(tenantId: string, verificationId: unknown): PatientVerification | ToolResult {
+  const check = activeVerification(tenantId, verificationId);
+  return check.ok ? check.verification : fail(VERIFICATION_MESSAGES[check.code], check.code);
+}
+
+const isFailure = (value: PatientVerification | ToolResult): value is ToolResult => "ok" in value;
+
+/** An appointment of the verified patient's, or nothing — never someone else's. */
+function ownAppointment(tenantId: string, patient: PatientVerification, appointmentId: string | undefined) {
+  if (!appointmentId) return null;
+  const appointment = getAppointment(tenantId, appointmentId);
+  if (!appointment || normalisePhone(appointment.patientPhone).national !== patient.phoneNational) return null;
+  return appointment;
+}
+
+const NOT_THEIRS = "No appointment with that reference was found for this patient.";
+
+// ------------------------------------------------------------
 // F — get_patient_appointments
 // ------------------------------------------------------------
-export function getPatientAppointments(tenantId: string, args: { patient_phone?: string }): ToolResult {
-  if (!args.patient_phone) return fail("A phone number is needed to find appointments.", "missing_phone");
-  const national = normalisePhone(args.patient_phone).national;
-  if (!national) return fail("That phone number could not be read.", "bad_phone");
-  const lead = getLeads().find((l) => l.tenantId === tenantId && normalisePhone(l.phone).national === national);
-  if (!lead) return ok({ appointments: [], count: 0 });
+export function getPatientAppointments(tenantId: string, args: { verification_id?: string }): ToolResult {
+  const patient = verifiedPatient(tenantId, args.verification_id);
+  if (isFailure(patient)) return patient;
   const tz = hospitalProfile(tenantId).timezone;
   const list = getAppointments(tenantId)
-    .filter((a) => a.patientLeadId === lead.id && a.status !== "cancelled")
+    .filter((a) => normalisePhone(a.patientPhone).national === patient.phoneNational && a.status !== "cancelled")
+    .sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt))
     .map((a) => ({
       appointment_id: a.id,
       doctor_name: providerFor(tenantId, a.doctorId)?.name ?? null,
       appointment_date: localDate(a.scheduledAt, tz),
       appointment_time: localTime(a.scheduledAt, tz),
       status: a.status,
+      upcoming: new Date(a.scheduledAt).getTime() >= Date.now(),
     }));
   return ok({ appointments: list, count: list.length });
 }
@@ -195,8 +352,14 @@ export function getPatientAppointments(tenantId: string, args: { patient_phone?:
 // ------------------------------------------------------------
 // G — reschedule_appointment
 // ------------------------------------------------------------
-export function rescheduleAppointment(tenantId: string, args: { appointment_id?: string; new_date?: string; new_time?: string }): ToolResult {
+export function rescheduleAppointment(
+  tenantId: string,
+  args: { appointment_id?: string; new_date?: string; new_time?: string; verification_id?: string }
+): ToolResult {
   if (!args.appointment_id) return fail("An appointment id is needed to reschedule.", "missing_appointment");
+  const patient = verifiedPatient(tenantId, args.verification_id);
+  if (isFailure(patient)) return patient;
+  if (!ownAppointment(tenantId, patient, args.appointment_id)) return fail(NOT_THEIRS, "not_found_for_patient");
   if (!args.new_date || !args.new_time) return fail("A new date and time are needed.", "missing_slot");
   const result = rescheduleService(
     tenantId,
@@ -204,14 +367,25 @@ export function rescheduleAppointment(tenantId: string, args: { appointment_id?:
     { date: args.new_date, time: args.new_time, note: "Rescheduled by the patient on a call." },
     "agent"
   );
-  if (!result.ok) return fail(result.problem, "not_rescheduled");
+  if (!result.ok) {
+    const current = getAppointment(tenantId, args.appointment_id);
+    return fail(
+      result.problem,
+      "not_rescheduled",
+      current ? { alternatives: alternativesFor(tenantId, current.doctorId, args.new_date) } : undefined
+    );
+  }
   const tz = hospitalProfile(tenantId).timezone;
+  const newDate = localDate(result.appointment.scheduledAt, tz);
   return ok({
     rescheduled: true,
     appointment_id: result.appointment.id,
-    appointment_date: localDate(result.appointment.scheduledAt, tz),
+    doctor_name: providerFor(tenantId, result.appointment.doctorId)?.name ?? null,
+    appointment_date: newDate,
     appointment_time: localTime(result.appointment.scheduledAt, tz),
     status: result.appointment.status,
+    // The old slot is free again and the new one is taken, as of this read.
+    remaining_slots: freeTimes(tenantId, result.appointment.doctorId, newDate),
   });
 }
 
@@ -220,51 +394,60 @@ export function rescheduleAppointment(tenantId: string, args: { appointment_id?:
 // ------------------------------------------------------------
 export async function cancelAppointment(
   tenantId: string,
-  args: { appointment_id?: string; confirm?: boolean; reason?: string }
+  args: { appointment_id?: string; confirm?: boolean; reason?: string; verification_id?: string }
 ): Promise<ToolResult> {
   if (!args.appointment_id) return fail("An appointment id is needed to cancel.", "missing_appointment");
+  const patient = verifiedPatient(tenantId, args.verification_id);
+  if (isFailure(patient)) return patient;
+  const appointment = ownAppointment(tenantId, patient, args.appointment_id);
+  if (!appointment) return fail(NOT_THEIRS, "not_found_for_patient");
   if (args.confirm !== true) return fail("Cancellation needs the patient's explicit confirmation.", "confirmation_required");
-  const appointment = getAppointment(tenantId, args.appointment_id);
-  if (!appointment) return fail("That appointment is not in the hospital's records.", "unknown_appointment");
 
   const outcome = await requestCancellation({
     tenantId,
-    appointmentId: args.appointment_id,
+    appointmentId: appointment.id,
+    canonicalPatientId: patient.patientId,
     requestedVia: "inbound_call",
     reason: args.reason ?? "Cancelled by the patient on a call.",
     actor: "agent",
+    // Verified above, by the hospital's records — not assumed.
     identityVerified: true,
   });
   if ("error" in outcome) return fail(outcome.error, "cancel_failed");
   // The appointment is cancelled only if a destination confirmed it; otherwise
   // the request stands with staff and the appointment is unchanged for now.
+  const tz = hospitalProfile(tenantId).timezone;
+  const date = localDate(appointment.scheduledAt, tz);
   return ok({
     appointment_id: args.appointment_id,
     cancelled: outcome.cancelled,
     message: outcome.message,
     needs_staff: outcome.needsStaff,
+    appointment_date: date,
+    appointment_time: localTime(appointment.scheduledAt, tz),
+    // Read after the cancellation: the released slot appears here only if the
+    // appointment really was cancelled.
+    available_slots: freeTimes(tenantId, appointment.doctorId, date),
   });
 }
 
 // ------------------------------------------------------------
 // I — get_appointment_details
 // ------------------------------------------------------------
-export function getAppointmentDetails(tenantId: string, args: { appointment_id?: string; patient_phone?: string }): ToolResult {
+export function getAppointmentDetails(tenantId: string, args: { appointment_id?: string; verification_id?: string }): ToolResult {
   if (!args.appointment_id) return fail("An appointment id is needed.", "missing_appointment");
-  const a = getAppointment(tenantId, args.appointment_id);
-  if (!a) return fail("That appointment is not in the hospital's records.", "unknown_appointment");
-  // When a phone is given, it must match the appointment's patient.
-  if (args.patient_phone) {
-    const lead = getLeads().find((l) => l.id === a.patientLeadId);
-    if (!lead || normalisePhone(lead.phone).national !== normalisePhone(args.patient_phone).national) {
-      return fail("Those details do not match this appointment.", "verification_failed");
-    }
-  }
+  const patient = verifiedPatient(tenantId, args.verification_id);
+  if (isFailure(patient)) return patient;
+  const a = ownAppointment(tenantId, patient, args.appointment_id);
+  if (!a) return fail(NOT_THEIRS, "not_found_for_patient");
   const tz = hospitalProfile(tenantId).timezone;
   return ok({
     appointment_id: a.id,
     patient_name: a.patientName,
+    doctor_id: a.doctorId,
     doctor_name: providerFor(tenantId, a.doctorId)?.name ?? null,
+    specialty: a.specialty,
+    consultation_fee: providerFor(tenantId, a.doctorId)?.consultationFee ?? null,
     appointment_date: localDate(a.scheduledAt, tz),
     appointment_time: localTime(a.scheduledAt, tz),
     status: a.status,
@@ -277,10 +460,12 @@ export function getAppointmentDetails(tenantId: string, args: { appointment_id?:
 
 export const AGENT_TOOLS = [
   "get_doctors",
+  "get_departments",
   "search_doctors",
   "check_doctor_availability",
   "get_available_slots",
   "book_appointment",
+  "verify_patient",
   "get_patient_appointments",
   "reschedule_appointment",
   "cancel_appointment",
@@ -342,9 +527,44 @@ export function agentToolsDiagnostics(tenantId: string): Record<string, unknown>
   };
 }
 
+/** "10:30", "10:30:00", "9.30", "10:30 AM", "4 pm" → "HH:MM". Anything else is left alone. */
+export function normaliseTime(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  const match = value.trim().match(/^(\d{1,2})(?:[:.](\d{2}))?(?::\d{2})?\s*(?:([ap])\.?\s*m\.?)?$/i);
+  if (!match || (match[2] === undefined && !match[3])) return value;
+  let hour = Number(match[1]);
+  const minute = Number(match[2] ?? "0");
+  const meridiem = match[3]?.toLowerCase();
+  if (meridiem) {
+    if (hour < 1 || hour > 12) return value;
+    hour = (hour % 12) + (meridiem === "p" ? 12 : 0);
+  }
+  if (hour > 23 || minute > 59) return value;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+/**
+ * Arguments as a voice agent's tool call tends to send them: a time with
+ * seconds or an AM/PM, a boolean or a number as a string. Only the shape is
+ * tidied — a value that cannot be read is passed through and refused by the
+ * tool itself.
+ */
+function coerceArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...(args ?? {}) };
+  for (const key of ["appointment_time", "new_time"]) {
+    if (key in out) out[key] = normaliseTime(out[key]);
+  }
+  if (typeof out.confirm === "string") out.confirm = /^(true|yes)$/i.test(out.confirm.trim());
+  if (typeof out.days === "string" && out.days.trim() !== "" && Number.isFinite(Number(out.days))) out.days = Number(out.days);
+  for (const key of ["doctor_id", "appointment_id", "date", "appointment_date", "new_date", "from_date"]) {
+    if (typeof out[key] === "string") out[key] = (out[key] as string).trim();
+  }
+  return out;
+}
+
 /** Runs one named tool. Always returns a structured result; never throws. */
 export async function runAgentTool(tenantId: string, tool: string, args: Record<string, unknown>): Promise<ToolResult> {
-  const a = args as never;
+  const a = coerceArgs(args) as never;
   const result = await dispatch(tenantId, tool, a);
   noteError(tool, result);
   return result;
@@ -355,6 +575,8 @@ async function dispatch(tenantId: string, tool: string, a: never): Promise<ToolR
     switch (tool) {
       case "get_doctors":
         return getDoctors(tenantId);
+      case "get_departments":
+        return getDepartments(tenantId);
       case "search_doctors":
         return searchDoctors(tenantId, a);
       case "check_doctor_availability":
@@ -363,6 +585,8 @@ async function dispatch(tenantId: string, tool: string, a: never): Promise<ToolR
         return getAvailableSlots(tenantId, a);
       case "book_appointment":
         return bookAppointment(tenantId, a);
+      case "verify_patient":
+        return await verifyPatient(tenantId, a);
       case "get_patient_appointments":
         return getPatientAppointments(tenantId, a);
       case "reschedule_appointment":

@@ -34,7 +34,7 @@ const workspacesRoute = await import("@/app/api/workspaces/route");
 const bootstrapRoute = await import("@/app/api/auth/bootstrap/route");
 const enterRoute = await import("@/app/api/workspaces/[id]/enter/route");
 const leadsRoute = await import("@/app/api/leads/route");
-const { NextRequest } = await import("C:/Dialo AI/node_modules/next/server.js");
+const { NextRequest } = await import(new URL("../node_modules/next/server.js", import.meta.url).href);
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail: unknown = "") => {

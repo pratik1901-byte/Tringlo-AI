@@ -13,7 +13,7 @@ const { saveWorkspaceProvider, providerConfigFor } = await import("@/lib/provide
 const { hashSessionToken } = await import("@/lib/auth/sessions");
 const workspaceRoute = await import("@/app/api/account/workspace/route");
 const agentConfigRoute = await import("@/app/api/agent-config/route");
-const { NextRequest } = await import("C:/Dialo AI/node_modules/next/server.js");
+const { NextRequest } = await import(new URL("../node_modules/next/server.js", import.meta.url).href);
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail: unknown = "") => {

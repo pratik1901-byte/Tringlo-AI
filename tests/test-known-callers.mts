@@ -16,6 +16,9 @@ process.env.SARVAM_ORG_ID = "org-id";
 process.env.SARVAM_WORKSPACE_ID = "sarvam-ws";
 
 // A suite writes freely, so it must never see the live database.
+// The project root, wherever the repository is checked out.
+const PROJECT = (await import("node:url")).fileURLToPath(new URL("..", import.meta.url)).split("\\").join("/").replace(/\/$/, "");
+
 const { isolateDatabase } = await import("./isolated-db");
 isolateDatabase("known-callers");
 
@@ -218,7 +221,7 @@ check("Each workspace has its own webhook token", providerConfigFor(A)!.webhookT
 // ---------------- 12. both imports exist in one place ----------------
 section("Both importers, one implementation");
 const fs = await import("node:fs");
-const read = (file: string) => fs.readFileSync(`C:/Dialo AI/src/${file}`, "utf8");
+const read = (file: string) => fs.readFileSync(`${PROJECT}/src/${file}`, "utf8");
 const editorSource = read("components/providers/voice-provider-editor.tsx");
 const wizardSource = read("components/auth/create-workspace-form.tsx");
 const settingsSource = read("components/settings/voice-provider-editor-panel.tsx");

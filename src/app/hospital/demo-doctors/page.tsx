@@ -23,6 +23,7 @@ interface DemoDoctor {
   name: string;
   specialty: string;
   department: string | null;
+  consultationFee: number | null;
   days: Weekday[];
   hours: { start: string; end: string };
   slotMinutes: number;
@@ -59,7 +60,7 @@ export default function DemoDoctorsPage() {
       <PageHeader
         eyebrow="Clinic"
         title="Demo Doctor List"
-        description="Fictional doctors for demonstrations. Edits here change the availability Maya offers on a call. Demonstration data only — kept separate from real doctors."
+        description="Every fictional doctor in this hospital's directory. Edit a schedule, department or fee, block a date or disable a doctor, and Maya works from the change on her next lookup. Demonstration data only — kept separate from real doctors."
       />
 
       <div className="flex flex-wrap items-center gap-2">
@@ -85,7 +86,7 @@ export default function DemoDoctorsPage() {
 
       {doctors.length > 0 && (
         <Card>
-          <Table head={["Doctor", "Days & hours", "Slot", "This week (free / booked / blocked)", "Status", ""]}>
+          <Table head={["Doctor", "Days & hours", "Slot", "Fee", "This week (free / booked / blocked)", "Status", ""]}>
             {doctors.map((doc) => {
               const free = doc.week.reduce((n, d) => n + d.available, 0);
               const booked = doc.week.reduce((n, d) => n + d.booked, 0);
@@ -103,6 +104,7 @@ export default function DemoDoctorsPage() {
                     {doc.blockedDates.length > 0 && <span className="block text-[11px] text-amber-700">Blocked: {doc.blockedDates.map((b) => b.date).join(", ")}</span>}
                   </td>
                   <td className="px-4 py-3 text-ink-soft">{doc.slotMinutes} min</td>
+                  <td className="px-4 py-3 text-ink-soft">{doc.consultationFee === null ? "Not set" : `₹${doc.consultationFee}`}</td>
                   <td className="px-4 py-3 text-[12px]">
                     <span className="text-sage-ink">{free}</span> / <span className="text-ink-soft">{booked}</span> / <span className="text-ink-muted">{blocked}</span>
                   </td>
@@ -138,13 +140,19 @@ function EditDialog({ doctor, busy, onClose, onSave }: { doctor: DemoDoctor; bus
   const [end, setEnd] = useState(doctor.hours.end);
   const [slotMinutes, setSlot] = useState(doctor.slotMinutes);
   const [specialty, setSpecialty] = useState(doctor.specialty);
+  const [department, setDepartment] = useState(doctor.department ?? "");
+  const [fee, setFee] = useState(doctor.consultationFee === null ? "" : String(doctor.consultationFee));
 
   const toggle = (d: Weekday) => setDays((cur) => (cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d]));
 
   return (
-    <Dialog open title={`Edit ${doctor.name}`} onClose={onClose} footer={<><Button variant="quiet" onClick={onClose}>Cancel</Button><Button variant="primary" disabled={busy} onClick={() => onSave({ days, start, end, slotMinutes, specialty })}>Save</Button></>}>
+    <Dialog open title={`Edit ${doctor.name}`} onClose={onClose} footer={<><Button variant="quiet" onClick={onClose}>Cancel</Button><Button variant="primary" disabled={busy} onClick={() => onSave({ days, start, end, slotMinutes, specialty, department, consultationFee: fee.trim() === "" ? null : Number(fee) })}>Save</Button></>}>
       <div className="space-y-4">
         <Field label="Specialty"><input className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus-visible:border-sage" value={specialty} onChange={(e) => setSpecialty(e.target.value)} /></Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Department"><input className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus-visible:border-sage" value={department} onChange={(e) => setDepartment(e.target.value)} /></Field>
+          <Field label="Consultation fee (₹)"><input type="number" min={0} className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus-visible:border-sage" value={fee} onChange={(e) => setFee(e.target.value)} placeholder="Not set" /></Field>
+        </div>
         <Field label="Consulting days">
           <div className="flex flex-wrap gap-1.5">
             {WEEKDAYS.map((d) => (

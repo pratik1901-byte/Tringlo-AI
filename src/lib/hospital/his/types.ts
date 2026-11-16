@@ -111,6 +111,8 @@ export interface HisProvider {
   /** Special hours on particular dates. */
   specialHours: Array<{ date: string; start: string; end: string }>;
   accepting: boolean;
+  /** Consultation fee in the hospital's currency, when published. */
+  consultationFee: number | null;
   /** An image the hospital provides, or nothing. */
   avatar: string | null;
   /** True when this came from the demonstration stand-in. */

@@ -11,7 +11,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useSyncExternalStore } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import {
   ArrowLeft,
   BarChart3,
@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 
 import { api, useWorkspace } from "@/lib/hospital/panel-api";
+import { usePageEntrance } from "./motion";
 import { Button, cn } from "./ui";
 
 /**
@@ -45,21 +46,21 @@ import { Button, cn } from "./ui";
  * where it is needed, from whatever the hospital's system currently says.
  */
 const NAV = [
-  { href: "/hospital", label: "Dashboard", icon: LayoutDashboard, group: null },
+  { href: "/hospital", label: "Dashboard", icon: LayoutDashboard, group: "Today" },
   { href: "/hospital/appointments", label: "Appointments", icon: CalendarDays, group: "Clinic" },
   { href: "/hospital/patients", label: "Patients", icon: Users, group: "Clinic" },
-  { href: "/hospital/demo-doctors", label: "Demo Doctor List", icon: Stethoscope, group: "Clinic" },
+  { href: "/hospital/demo-doctors", label: "Doctors", icon: Stethoscope, group: "Clinic" },
   { href: "/hospital/medical-history", label: "Questionnaire", icon: ClipboardList, group: "Clinic" },
-  { href: "/hospital/reminders", label: "Confirmation Calls", icon: Bell, group: "Calling" },
-  { href: "/hospital/calls", label: "Call History", icon: PhoneCall, group: "Calling" },
-  { href: "/hospital/agent", label: "AI Agent", icon: Bot, group: "Calling" },
-  { href: "/hospital/inquiries", label: "Inquiries & Reception", icon: HelpCircle, group: "Reception" },
-  { href: "/hospital/follow-ups", label: "Follow-ups", icon: PhoneForwarded, group: "Reception" },
+  { href: "/hospital/agent", label: "Maya", icon: Bot, group: "Voice" },
+  { href: "/hospital/reminders", label: "Confirmation Calls", icon: Bell, group: "Voice" },
+  { href: "/hospital/calls", label: "Call History", icon: PhoneCall, group: "Voice" },
+  { href: "/hospital/inquiries", label: "Inquiries & Reception", icon: HelpCircle, group: "Front desk" },
+  { href: "/hospital/follow-ups", label: "Follow-ups", icon: PhoneForwarded, group: "Front desk" },
   { href: "/hospital/analytics", label: "Analytics", icon: BarChart3, group: "Hospital" },
   { href: "/hospital/settings", label: "Settings", icon: Settings, group: "Hospital" },
 ];
 
-const SECTIONS = [null, "Clinic", "Calling", "Reception", "Hospital"].map((group) => ({
+const SECTIONS = ["Today", "Clinic", "Voice", "Front desk", "Hospital"].map((group) => ({
   group,
   items: NAV.filter((item) => item.group === group),
 }));
@@ -91,6 +92,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isDark = useIsDark();
   const [drawer, setDrawer] = useState(false);
+  const pageRef = useRef<HTMLDivElement>(null);
+  usePageEntrance(pageRef, pathname);
   // Which hospital's records are on screen. Read here so every page says it.
   const { data: context } = useWorkspace();
 
@@ -115,7 +118,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       {SECTIONS.map(({ group, items }) => (
         <div key={group ?? "home"}>
           {group && (
-            <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-muted">{group}</p>
+            <p className="mb-1.5 px-3 text-[10px] font-medium uppercase tracking-[0.18em] text-ink-muted">{group}</p>
           )}
           <ul className="space-y-0.5">
             {items.map((item) => {
@@ -130,11 +133,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
                     onClick={() => setDrawer(false)}
                     aria-current={active ? "page" : undefined}
                     className={cn(
-                      "group flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors",
-                      active ? "bg-raised text-ink shadow-[0_1px_2px_rgba(0,0,0,0.05)]" : "text-ink-muted hover:bg-raised/60 hover:text-ink"
+                      "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors",
+                      active ? "bg-sage-soft text-ink" : "text-ink-muted hover:bg-raised hover:text-ink"
                     )}
                   >
-                    <item.icon className={cn("h-4 w-4 shrink-0", active ? "text-sage" : "text-ink-muted")} />
+                    {active && <span className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-sage" aria-hidden="true" />}
+                    <item.icon className={cn("h-4 w-4 shrink-0 transition-transform duration-200 group-hover:scale-110", active ? "text-sage" : "text-ink-muted")} />
                     {item.label}
                   </Link>
                 </li>
@@ -147,7 +151,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="flex min-h-dvh bg-canvas">
+    <div className="flex min-h-dvh bg-sunken">
       {/* Desktop sidebar */}
       <aside className="hidden w-[244px] shrink-0 flex-col md:flex">
         <Brand />
@@ -159,7 +163,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       {drawer && (
         <div className="fixed inset-0 z-50 md:hidden">
           <button type="button" aria-label="Close menu" className="absolute inset-0 bg-ink/25" onClick={() => setDrawer(false)} />
-          <div className="relative flex h-full w-[260px] flex-col bg-canvas">
+          <div className="relative flex h-full w-[260px] flex-col bg-sunken shadow-xl">
             <div className="flex items-center justify-between pr-3">
               <Brand />
               <button
@@ -177,7 +181,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      <div className="m-0 flex min-w-0 flex-1 flex-col md:my-2 md:mr-2 md:overflow-hidden md:rounded-2xl md:border md:bg-surface">
+      <div className="m-0 flex min-w-0 flex-1 flex-col md:my-2 md:mr-2 md:overflow-hidden md:rounded-2xl md:border md:bg-canvas">
         <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b px-4 md:px-6">
           <div className="flex min-w-0 items-center gap-2">
             <button
@@ -217,7 +221,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </header>
 
         <main className="flex-1 md:overflow-y-auto">
-          <div className="mx-auto w-full max-w-[1180px] px-4 py-6 md:px-8 md:py-8">
+          <div ref={pageRef} className="mx-auto w-full max-w-[1180px] px-4 py-6 md:px-10 md:py-10">
             {/*
               A workspace that is not a hospital gets the invitation rather
               than eleven pages of errors. Nothing here is set up by accident:
@@ -234,14 +238,17 @@ export function Shell({ children }: { children: React.ReactNode }) {
 function Brand() {
   return (
     <div className="flex h-16 items-center gap-2.5 px-5">
-      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-sage text-white" aria-hidden="true">
+      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink text-canvas" aria-hidden="true">
         <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
           <path d="M12 5v14M5 12h14" />
         </svg>
       </span>
       <span className="min-w-0">
         <span className="block truncate font-display text-[17px] leading-tight text-ink">Wellness Hospital</span>
-        <span className="block text-[10.5px] uppercase tracking-[0.1em] text-ink-muted">Operations</span>
+        <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.18em] text-ink-muted">
+          <span className="h-1.5 w-1.5 rounded-full bg-[var(--lime)] ring-1 ring-ink/10" aria-hidden="true" />
+          Operations
+        </span>
       </span>
     </div>
   );

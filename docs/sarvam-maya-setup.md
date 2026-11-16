@@ -31,9 +31,9 @@ runbook only needs that URL and the workspace token.
 
 ## B. Register Maya's tools in Sarvam
 
-In the Sarvam dashboard, open app `Amrita---We-4517816a-a47a`, add the nine
-tools from **`docs/sarvam-maya-tools.json`** to the agent versions used on calls
-(outbound v3, inbound), each calling:
+In the Sarvam dashboard, open app `Amrita---We-4517816a-a47a`, add the eleven
+tools from **`docs/sarvam-maya-tools.json`** to the agent version used on calls
+(version 5, for outbound, campaigns and inbound alike), each calling:
 
 `POST {WEBHOOK_BASE_URL}/api/hospital/agent-tools`
 with header `Authorization: Bearer {WELLNESS_WEBHOOK_TOKEN}` and body
@@ -44,31 +44,17 @@ The workspace token is the Wellness `webhookToken` — find it in the hospital A
 Agent page, or in `providerConfigs` for tenant `tenant_1792938564756_qe17wn`.
 Keep it out of source control.
 
-Then **publish/deploy** the app version that declares the tools (the account
-currently shows v1 deployed; v3 is what Tringlo is configured for).
+Then **publish** version 5 of the app with the tools on it. Tringlo's Wellness
+workspace must point every agent (outbound, campaign, inbound) at version 5,
+and declare the same 36 agent variables the version-5 app declares. Tringlo sends
+only the 15 it has values for; the rest are Maya's own output variables.
 
-## C. Add these instructions to Maya's system prompt (Sarvam)
+## C. Maya's system prompt and variables (Sarvam)
 
-Append to Maya's existing inbound prompt (do not replace it):
-
-> You can act on the hospital's real database only through tools. For anything
-> about doctors, availability, or a patient's appointments you MUST call a tool
-> and use its result — never guess, never read availability from memory.
-> - To find a doctor or specialty, call `search_doctors` (or `get_doctors`).
-> - To check availability, call `check_doctor_availability` (one date) or
->   `get_available_slots` (a range). Offer only slots the tool returns.
-> - To book: collect the patient's name and phone, read the doctor, date and
->   time back, get an explicit "yes", then call `book_appointment`. Confirm the
->   booking and give the reference id ONLY after the tool returns `ok:true`.
-> - To reschedule: find the appointment, check the new slot, confirm, then call
->   `reschedule_appointment`.
-> - To cancel: find the appointment, get an explicit "yes to cancel", then call
->   `cancel_appointment` with `confirm:true`.
-> Before a tool that may take a moment, say one short line like "Certainly, let
-> me check that for you," then wait for the result — do not ask if the caller is
-> still there while a tool is running. If a tool returns `ok:false`, read its
-> `error` and offer an alternative. Never say an appointment is booked, moved or
-> cancelled unless the tool confirmed it.
+Use **[`docs/sarvam-maya-prompt.md`](sarvam-maya-prompt.md)**: the variables to declare
+(input and output, with exact names and enum values), the full prompt, and the
+validation table. It replaces the shorter instruction block that used to be
+here, which predated patient verification.
 
 ## D. Enable inbound for Wellness
 

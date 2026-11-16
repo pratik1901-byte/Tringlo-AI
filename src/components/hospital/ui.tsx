@@ -11,6 +11,8 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { AlertTriangle, Loader2, X } from "lucide-react";
 
+import { useCountUp } from "./motion";
+
 export function cn(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
 }
@@ -34,9 +36,12 @@ export function PageHeader({
     <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
         {eyebrow && (
-          <p className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.14em] text-ink-muted">{eyebrow}</p>
+          <p className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-ink-muted">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--lime)] ring-1 ring-ink/10" aria-hidden="true" />
+            {eyebrow}
+          </p>
         )}
-        <h1 className="font-display text-[30px] leading-tight text-ink">{title}</h1>
+        <h1 className="font-display text-[34px] leading-[1.08] text-ink md:text-[40px]">{title}</h1>
         {description && <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-ink-muted">{description}</p>}
       </div>
       {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
@@ -52,7 +57,7 @@ export function CardHead({ title, note, actions }: { title: string; note?: React
   return (
     <div className="flex items-start justify-between gap-4 border-b px-5 py-4">
       <div className="min-w-0">
-        <h2 className="text-[15px] font-semibold text-ink">{title}</h2>
+        <h2 className="text-[19px] leading-tight text-ink">{title}</h2>
         {note && <p className="mt-0.5 text-xs text-ink-muted">{note}</p>}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
@@ -74,25 +79,26 @@ export function Stat({
   tone?: "plain" | "sage" | "clay" | "alert";
   href?: string;
 }) {
+  const counted = useCountUp(typeof value === "number" ? value : null);
   const body = (
     <>
-      <p className="text-[12.5px] font-medium text-ink-muted">{label}</p>
+      <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted">{label}</p>
       <p
         className={cn(
-          "mt-2 font-display text-[34px] leading-none tabular",
+          "mt-3 font-display text-[44px] leading-none tabular",
           tone === "sage" && "text-sage",
           tone === "clay" && "text-clay",
           tone === "alert" && "text-alert"
         )}
       >
-        {value}
+        {typeof value === "number" ? <span ref={counted}>{value}</span> : value}
       </p>
       {note ? <p className="mt-2 text-xs text-ink-muted">{note}</p> : <p className="mt-2 text-xs">&nbsp;</p>}
     </>
   );
   const className = cn(
-    "block rounded-xl border bg-surface p-5 transition-colors",
-    href && "hover:border-sage/50"
+    "block rounded-xl border bg-surface p-5 transition-[border-color,transform] duration-200",
+    href && "hover:-translate-y-0.5 hover:border-ink/40"
   );
   return href ? (
     <a href={href} className={className}>
@@ -200,7 +206,7 @@ export function Button({
       {...rest}
       className={cn(
         "inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg px-3.5 text-[13px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-50",
-        variant === "primary" && "bg-sage text-white hover:opacity-90",
+        variant === "primary" && "bg-ink text-canvas hover:opacity-85",
         variant === "plain" && "border bg-raised text-ink hover:bg-sunken",
         variant === "quiet" && "text-ink-muted hover:bg-sunken hover:text-ink",
         variant === "danger" && "border border-alert/40 text-alert hover:bg-alert-soft",
@@ -246,7 +252,7 @@ export function Table({ head, children }: { head: string[]; children: ReactNode 
         <thead className="border-b bg-sunken/60">
           <tr>
             {head.map((column) => (
-              <th key={column} className="px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.07em] text-ink-muted">
+              <th key={column} className="px-4 py-2.5 text-[10.5px] font-medium uppercase tracking-[0.12em] text-ink-muted">
                 {column}
               </th>
             ))}
@@ -340,7 +346,7 @@ export function Dialog({
         className="relative flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border bg-surface shadow-[0_24px_60px_-30px_rgba(0,0,0,0.4)] outline-none sm:rounded-2xl"
       >
         <div className="flex items-center justify-between gap-4 border-b px-5 py-4">
-          <h2 className="text-[15px] font-semibold text-ink">{title}</h2>
+          <h2 className="text-[19px] leading-tight text-ink">{title}</h2>
           <button
             type="button"
             onClick={onClose}

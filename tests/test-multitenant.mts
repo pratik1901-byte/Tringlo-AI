@@ -18,6 +18,9 @@ process.env.ALLOW_CALLS_WITHOUT_WEBHOOK = "true";
 
 // ---------------- simulated Sarvam ----------------
 interface Hit { method: string; url: string; body: unknown }
+// The project root, wherever the repository is checked out.
+const PROJECT = (await import("node:url")).fileURLToPath(new URL("..", import.meta.url)).split("\\").join("/").replace(/\/$/, "");
+
 const hits: Hit[] = [];
 const deployments: Record<string, { status: string; phones: string[] }> = {};
 let nextAttempt = 1;
@@ -72,7 +75,7 @@ const { buildAgentKnowledgeContext } = await import("@/lib/rag");
 const { hashSessionToken } = await import("@/lib/auth/sessions");
 const inbound = await import("@/lib/inbound/service");
 const { applySarvamEvent } = await import("@/lib/calls/service");
-const { NextRequest } = await import("C:/Dialo AI/node_modules/next/server.js");
+const { NextRequest } = await import(new URL("../node_modules/next/server.js", import.meta.url).href);
 
 const ragRoute = await import("@/app/api/integrations/sarvam/rag/route");
 const recordsRoute = await import("@/app/api/records/route");
@@ -331,7 +334,7 @@ check("No empty 'Company: .' line", !/Company:\s*\./.test(ragD.compactContext));
 check("It still says it is an AI", /you are an AI assistant/.test(ragD.compactContext));
 
 console.log("\n=== Credentials come from the platform, not the environment ===");
-const attemptsSource = (await import("node:fs")).readFileSync("C:/Dialo AI/src/lib/providers/sarvam/attempts.ts", "utf8");
+const attemptsSource = (await import("node:fs")).readFileSync(PROJECT + "/src/lib/providers/sarvam/attempts.ts", "utf8");
 check("attempts.ts no longer reads SARVAM_API_KEY", !/SARVAM_API_KEY/.test(attemptsSource));
 
 

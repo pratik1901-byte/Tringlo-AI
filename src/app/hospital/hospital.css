@@ -31,23 +31,24 @@
   color-scheme: light;
 
   /* Paper, in three weights. */
-  --canvas: #f4f0e8;
-  --surface: #fbf9f4;
+  --canvas: #fffcf4;
+  --surface: #ffffff;
   --raised: #ffffff;
-  --sunken: #efeae0;
+  --sunken: #f6f2e7;
 
-  --color-ink: #26241f;
-  --color-ink-soft: #4a463e;
-  --color-ink-muted: #6f6a5f;
+  --color-ink: #171614;
+  --color-ink-soft: #2a2825;
+  --color-ink-muted: #6b675f;
 
-  --line: #e2dccf;
-  --line-soft: #ede8dc;
+  --line: #e6e1d3;
+  --line-soft: #f0ecdf;
 
   /* The one accent: a muted sage. Used for the current page, a confirmed
      booking, a healthy state — never for decoration. */
-  --sage: #5c7a5c;
-  --sage-soft: #e7ede3;
-  --sage-ink: #3f5740;
+  --sage: #3c48d9;
+  --lime: #e8f056;
+  --sage-soft: #eef0fe;
+  --sage-ink: #2b35a8;
 
   /* Something needs a person: a warm clay, not an alarm. */
   --clay: #9a6b3f;
@@ -59,28 +60,28 @@
 
   background: var(--canvas);
   color: var(--color-ink);
-  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
 .dark .hospital-panel {
   color-scheme: dark;
 
-  --canvas: #15140f;
-  --surface: #1c1a15;
+  --canvas: #141310;
+  --surface: #1c1b17;
   --raised: #23211a;
-  --sunken: #121109;
+  --sunken: #100f0c;
 
-  --color-ink: #f2ede1;
-  --color-ink-soft: #d6d0c2;
-  --color-ink-muted: #a49d8d;
+  --color-ink: #f3f0e7;
+  --color-ink-soft: #d8d3c6;
+  --color-ink-muted: #a39e91;
 
-  --line: #332f26;
+  --line: #2e2c26;
   --line-soft: #2a271f;
 
-  --sage: #8fae8b;
-  --sage-soft: #26301f;
-  --sage-ink: #c3d8be;
+  --sage: #b8befc;
+  --sage-soft: #23264a;
+  --sage-ink: #c3c8fd;
 
   --clay: #d0a06a;
   --clay-soft: #332616;
@@ -100,7 +101,13 @@
 .hospital-panel h3 {
   font-family: var(--font-display), Georgia, serif;
   font-weight: 400;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
+}
+
+/* The accent keeps its old name, "sage", and is now the platform indigo. In
+   the dark it is a pale tint, so text on it must be dark. */
+.dark .hospital-panel .bg-sage {
+  color: #171614;
 }
 
 /* Figures line up in a column and do not shift as they change. */
