@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 28" width="28" height="28" role="img" aria-label="Tringlo AI">
+  <!-- The Tringlo AI mark: a signal crossing a line — a call being placed.
+       A favicon cannot read the page's theme, so the brand's own colours are
+       fixed here: ink square, ivory signal, lime end point. -->
+  <rect width="28" height="28" rx="6" fill="#171614"/>
+  <path d="M5 14h4l2-5 3 10 3-8 2 3h3.2" fill="none" stroke="#F5F2EA" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="22.6" cy="14" r="1.9" fill="#E8F056"/>
+</svg>

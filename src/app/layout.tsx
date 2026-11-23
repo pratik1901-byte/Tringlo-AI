@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { EB_Garamond, Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AppShell } from "@/components/layout/app-shell";
+import { siteUrl } from "@/lib/site-url";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -21,10 +22,43 @@ const garamond = EB_Garamond({
   display: "swap",
 });
 
+const DESCRIPTION =
+  "Place real outbound sales calls with an AI voice agent, and see the transcript, outcome and follow-up for every one.";
+
+/**
+ * Metadata every page inherits.
+ *
+ * A page or layout deeper in the tree exports its own `metadata` object (or a
+ * `generateMetadata` function when the values depend on data), and only the
+ * fields it names are replaced — everything here carries on. There is no title
+ * template on purpose: the pages that set a title already end it with the
+ * product's name, and a template would say the name twice.
+ *
+ * The icons and the share card are deliberately not listed: Next picks up
+ * icon.svg, favicon.ico, apple-icon.png, opengraph-image.png and
+ * twitter-image.png from this folder by their file names and writes the tags
+ * itself, with a content hash, so a changed logo is never served stale.
+ */
 export const metadata: Metadata = {
+  // Absolute URLs for the share card and canonical links; robots.ts and
+  // sitemap.ts resolve against the same value.
+  metadataBase: new URL(siteUrl()),
   title: "Tringlo AI",
-  description:
-    "Place real outbound sales calls with an AI voice agent, and see the transcript, outcome and follow-up for every one.",
+  description: DESCRIPTION,
+  applicationName: "Tringlo AI",
+  openGraph: {
+    type: "website",
+    siteName: "Tringlo AI",
+    title: "Tringlo AI",
+    description: DESCRIPTION,
+    url: "/",
+    locale: "en_IN",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Tringlo AI",
+    description: DESCRIPTION,
+  },
 };
 
 /**

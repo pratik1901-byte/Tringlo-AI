@@ -22,6 +22,11 @@ export const metadata: Metadata = {
       "Single calls, scheduled campaigns and an optional inbound line — with the outcome, transcript, recording and follow-up of every call kept for you.",
     siteName: SITE.name,
     type: "website",
+    // Named here because this page declares an openGraph block of its own, and
+    // that replaces the one in the root layout — including the share card Next
+    // takes from app/opengraph-image.png. Pages without their own block, such
+    // as Contact, inherit that card automatically and need no images field.
+    images: [{ url: "/opengraph-image.png", width: 1200, height: 630, alt: `The ${SITE.name} mark and wordmark on the brand ivory.` }],
   },
 };
 

@@ -27,6 +27,8 @@ const display = EB_Garamond({ subsets: ["latin"], variable: "--font-display", di
 export const metadata: Metadata = {
   title: "Hospital Operations — Tringlo AI",
   description: "Appointments, patient records, confirmation calls and reception.",
+  // Patient data sits behind this. Never a search result.
+  robots: { index: false, follow: false },
 };
 
 export default function HospitalLayout({ children }: { children: React.ReactNode }) {
